@@ -10,7 +10,7 @@ Status legend:
 
 ## Open Gates & Tracked Notes
 - **M0 Gate (resolved):** License = `GPL-3.0-or-later` (user choice); MSRV = `1.89` (conservative baseline via ADR-002); GUI baseline = `GTK 4.6` + `libadwaita 1.1` with feature-gated `v1_4` fallback (user choice).
-- **Pre-M3/M6 Note:** `CLAUDE.md` references a `hardware-safety` skill for M3 readback/writes and M6 onboard profiles (`0x8100`). Request or author `hardware-safety` rules before performing any real hardware writes.
+- **Pre-M3/M6 Note (resolved for M3):** Authored `.claude/skills/hardware-safety/SKILL.md` (dry-run/read-only guards, capability bounds validation, pre-write snapshot, mandatory readback verification, onboard memory lock until M6, and Ask-First Gate before real hardware writes).
 
 ---
 
@@ -47,24 +47,24 @@ Status legend:
 - [x] Device TOML loader & schema validator (`squeak-core`: `data/devices/*.toml`, unique PIDs, generic fallback)
 - [x] `squeak-cli` (`squeak`): `list`, `info`, `dump-device`, `setup-udev` (`--dry-run`, `--json`)
 - [x] Serial-number redaction / omission guarantee in `dump-device` output and logs
-- [x] Initial `data/devices/g502-hero.toml` (PID `0xc08b` provisional until `[NEEDS-HW]` verified)
-- [x] `[NEEDS-HW]` G502 HERO verification guide & expected output in `docs/hw-tests-m2.md`
-- [ ] `[NEEDS-HW]` Physical G502 HERO hardware execution pending (`docs/hw-tests-m2.md`):
-  - Verify PID: `lsusb | grep 046d`
-  - Install/verify udev access: `cargo run -p squeak-cli -- setup-udev --dry-run` / `setup-udev`
-  - Enumerate: `cargo run -p squeak-cli -- list --json`
-  - Inspect & dump features: `cargo run -p squeak-cli -- info` / `dump-device --json`
+- [x] Initial `data/devices/g502-hero.toml` (PID `0xc08b` verified via `lsusb` & `squeak list`)
+- [x] `[NEEDS-HW]` G502 HERO verification guide & verified output in `docs/hw-tests-m2.md`
+- [x] `[NEEDS-HW]` Physical G502 HERO hardware execution completed (`docs/hw-tests-m2.md`):
+  - Verified PID: `lsusb | grep 046d` -> `046d:c08b` (`Logitech, Inc. G502 SE HERO Gaming Mouse`)
+  - Installed/verified udev access: `setup-udev` + `setup-udev --dry-run` (`/dev/hidraw6` -> `accessible`)
+  - Enumerated: `list --json` (`HID++ 4.2`, `matched_name: "G502 HERO"`, `accessible`)
+  - Inspected & dumped features: `info` + `dump-device --json` (20 features: `IFeatureSet` `v1`, `FIRMWARE_INFO` `0x0003 v2`, `DEVICE_NAME` `0x0005 v0`, `ADJUSTABLE_DPI` `0x2201 v1`, `REPORT_RATE` `0x8060 v0`, `COLOR_LED_EFFECTS` `0x8070 v3`, `ONBOARD_PROFILES` `0x8100 v0`, `MOUSE_BUTTON_SPY` `0x8110 v0`; no `0x1B04`, zero serials)
 - [x] M2 quality gate green & hostile self-review
 
 > **M2 Summary**
-> - **Done:** Implemented `squeak-core` device TOML catalog (`DeviceDatabase`, SVG path/element ID validation, duplicate VID:PID checks, generic fallback) and sanitized schemas (`DeviceDump`, `DeviceInfoReport`, `DeviceListEntry`), provisional `data/devices/g502-hero.toml`, `squeak` CLI (`list`, `info`, `dump-device`, `setup-udev` via `pkexec`), `docs/hw-tests-m2.md`, and hostile-review hardening across `hidpp` (`hidraw` `Duration::MAX`/loop deadline checks, `IFeatureSet` v0/255 clamping, receiver `0x8F` offline/`Busy` distinction).
-> - **Tested:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`, `RUSTFLAGS="-D unused-crate-dependencies" cargo check -p hidpp -p squeak-core -p squeak-cli --lib --bins`, license audit (`deny.toml`), CLI smoke runs (`--help`, `list --json`, `setup-udev --dry-run --json`), and 59 workspace tests (`41` `hidpp`, `5` `squeak-core`, `11` `squeak-cli`, `1` `squeakd`, `1` `squeak-gui`).
-> - **Needs hardware:** Execute `lsusb | grep 046d`, `setup-udev`, `list --json`, `info`, and `dump-device --json` against physical G502 HERO on Fedora/Wayland (`[NEEDS-HW]` in `docs/hw-tests-m2.md`).
-> - **Risks:** Provisional PID `0xc08b` and button CIDs (`0x00c3`..`0x005d`) in `g502-hero.toml` await live hardware verification; non-HID++ packet skipping on shared endpoints untested on real hardware.
-> - **Next:** Run `[NEEDS-HW]` M2 verification on G502 HERO and report output before beginning M3 (`FIRMWARE_INFO`, `DEVICE_NAME`, battery, DPI, report rate).
+> - **Done:** Implemented `squeak-core` device TOML catalog (`DeviceDatabase`, SVG path/element ID validation, duplicate VID:PID checks, generic fallback) and sanitized schemas (`DeviceDump`, `DeviceInfoReport`, `DeviceListEntry`), `data/devices/g502-hero.toml`, `squeak` CLI (`list`, `info`, `dump-device`, `setup-udev` via `pkexec`), `docs/hw-tests-m2.md`, and hostile-review hardening across `hidpp` (`hidraw` `Duration::MAX`/loop deadline checks, `IFeatureSet` v0/255 clamping, receiver `0x8F` offline/`Busy` distinction).
+> - **Tested:** Quality gates + 59 workspace tests + live Fedora hardware verification on physical G502 SE HERO (`046d:c08b` on `/dev/hidraw6`, HID++ `4.2`, 20 features, zero serial numbers).
+> - **Needs hardware:** Completed for M2; button CIDs in `g502-hero.toml` remain `[NEEDS-HW]` for M5/M6 (`MOUSE_BUTTON_SPY` / `ONBOARD_PROFILES`).
+> - **Risks:** G502 HERO firmware lacks `0x1B04` (`REPROG_CONTROLS_V4`) and uses `0x8070` (`COLOR_LED_EFFECTS` v3) + `0x8100`/`0x8110` for buttons/profiles; M5/M6 must account for both `0x1B04` and `0x8100`-based mice.
+> - **Next:** M3 (`FIRMWARE_INFO` `0x0003`, `DEVICE_NAME` `0x0005`, `BATTERY_STATUS` `0x1000`, `UNIFIED_BATTERY` `0x1004`, `ADJUSTABLE_DPI` `0x2201`, `REPORT_RATE` `0x8060`, `EXTENDED_REPORT_RATE` `0x8061`, readback verification, and `--dry-run` CLI commands).
 
 ## M3 – Read/Write Basics (STOP/ASK before first real write)
-- [ ] `FIRMWARE_INFO` (`0x0003`) & `DEVICE_NAME` (`0x0005`)
+- [~] `FIRMWARE_INFO` (`0x0003`) & `DEVICE_NAME` (`0x0005`)
 - [ ] `BATTERY_STATUS` (`0x1000`) & `UNIFIED_BATTERY` (`0x1004`)
 - [ ] `ADJUSTABLE_DPI` (`0x2201`: sensor count, DPI list/range, get/set stages)
 - [ ] `REPORT_RATE` (`0x8060`) & `EXTENDED_REPORT_RATE` (`0x8061`)
