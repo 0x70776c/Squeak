@@ -5,7 +5,7 @@
   <g id="cable" fill="none" stroke="#e5e9f0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <line x1="172" y1="14" x2="172" y2="54" />
     <line x1="182" y1="14" x2="182" y2="54" />
-    <path d="M 167 54 L 187 54 L 187 96 L 167 96 Z" fill="#101318" />
+    <rect x="167" y="54" width="20" height="40" rx="2" fill="#101318" />
     <line x1="168" y1="62" x2="174" y2="62" />
     <line x1="180" y1="62" x2="186" y2="62" />
     <line x1="168" y1="70" x2="174" y2="70" />
@@ -16,43 +16,63 @@
     <line x1="180" y1="86" x2="186" y2="86" />
   </g>
 
-  <!-- Outer Mouse Silhouette & Thumb Wing -->
+  <!-- Outer Mouse Silhouette -->
   <path id="body-shell"
-        d="M 192 68 C 228 84, 258 106, 268 148 L 280 264 C 288 360, 276 462, 198 504 L 188 504 C 184 480, 184 446, 178 424 L 166 424 C 168 450, 168 480, 164 504 L 154 504 C 110 486, 86 436, 72 396 C 48 378, 32 356, 33 326 C 34 294, 54 270, 62 246 L 64 196 L 78 134 C 84 106, 114 96, 160 96 L 160 88 L 192 88 Z"
+        d="M 192 68
+           C 226 82, 256 106, 266 146
+           C 276 196, 280 258, 281 312
+           C 282 378, 272 444, 224 486
+           C 210 498, 198 504, 190 504
+           C 184 504, 180 496, 176 496
+           C 172 496, 168 504, 162 504
+           C 122 496, 94 448, 76 400
+           C 50 384, 33 360, 33 328
+           C 33 296, 52 272, 60 248
+           L 63 188
+           L 76 130
+           C 84 104, 114 94, 160 94
+           L 160 88
+           L 192 88 Z"
         fill="#11141a" stroke="#e5e9f0" stroke-width="2" stroke-linejoin="round" />
 
-  <!-- Thumb Wing Inner Contour -->
+  <!-- Left Side Trim Strip & Thumb Wing Inner Seam -->
   <path id="thumb-wing"
-        d="M 62 248 C 44 278, 38 310, 44 342 C 52 368, 86 384, 118 408 C 148 430, 168 446, 174 502"
-        fill="none" stroke="#9aa6bd" stroke-width="1.6" stroke-linejoin="round" />
-
-  <!-- Lower Palm Seam Lines -->
-  <path id="palm-seams"
-        d="M 74 332 L 166 292 M 192 278 L 270 300 M 252 384 C 266 420, 264 452, 240 478 M 82 318 C 102 366, 146 390, 182 414 C 188 442, 188 474, 188 503"
+        d="M 60 250
+           C 62 280, 62 314, 66 340
+           C 74 366, 102 384, 132 404
+           C 158 422, 174 444, 175 496"
         fill="none" stroke="#9aa6bd" stroke-width="1.5" stroke-linejoin="round" />
+
+  <!-- Inner Palm Seam Lines (strictly inside body-shell) -->
+  <path id="palm-seams"
+        d="M 164 292 L 194 278
+           M 194 278 L 266 296
+           M 252 293 C 266 350, 268 416, 238 468
+           M 82 316 C 102 362, 146 384, 184 410 C 188 438, 189 470, 189 503"
+        fill="none" stroke="#9aa6bd" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
 
   <!-- Left Click (Primary) -->
   <path id="btn-left" class="squeak-btn"
-        d="M 96 106 C 116 98, 138 96, 158 96 L 162 290 L 94 316 C 84 252, 82 168, 96 106 Z"
+        d="M 96 106 C 116 98, 138 95, 159 95 L 163 288 L 93 312 C 83 250, 82 168, 96 106 Z"
         fill="#161a22" stroke="#e5e9f0" stroke-width="1.8" stroke-linejoin="round" />
 
   <!-- Right Click (Secondary) -->
   <path id="btn-right" class="squeak-btn"
-        d="M 192 70 C 224 84, 248 106, 258 144 C 268 192, 268 248, 266 296 L 194 278 L 192 96 Z"
+        d="M 192 70 C 224 84, 248 106, 258 144 C 266 190, 268 246, 266 294 L 194 276 L 192 94 Z"
         fill="#161a22" stroke="#e5e9f0" stroke-width="1.8" stroke-linejoin="round" />
 
   <!-- Center Spine Housing -->
-  <path d="M 160 96 L 192 96 L 194 278 L 164 292 Z"
+  <path d="M 160 94 L 192 94 L 194 276 L 163 290 Z"
         fill="#101318" stroke="#9aa6bd" stroke-width="1.5" stroke-linejoin="round" />
 
-  <!-- G8 (DPI Up) on outer edge of Left Click -->
+  <!-- G8 (DPI Up) flush along left edge of Left Click -->
   <path id="btn-g8" class="squeak-btn"
-        d="M 74 128 L 88 122 L 85 168 L 66 176 Z"
+        d="M 76 130 L 90 124 L 87 170 L 68 178 Z"
         fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
 
   <!-- G7 (DPI Down) below G8 -->
   <path id="btn-g7" class="squeak-btn"
-        d="M 65 182 L 84 174 L 82 218 L 62 224 Z"
+        d="M 67 184 L 86 176 L 84 220 L 64 226 Z"
         fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
 
   <!-- Scroll Wheel Housing -->
@@ -70,14 +90,11 @@
     <rect x="171" y="178" width="14" height="5" rx="2" fill="none" />
   </g>
 
-  <!-- Scroll Left Tilt -->
-  <path id="btn-scroll-left" class="squeak-btn"
-        d="M 152 140 L 163 140 L 163 174 L 152 174 L 146 157 Z"
-        fill="#1a1f28" stroke="#9aa6bd" stroke-width="1.3" />
-  <!-- Scroll Right Tilt -->
-  <path id="btn-scroll-right" class="squeak-btn"
-        d="M 193 140 L 204 140 L 210 157 L 204 174 L 193 174 Z"
-        fill="#1a1f28" stroke="#9aa6bd" stroke-width="1.3" />
+  <!-- Scroll Left/Right Tilt (compact strips hugging wheel housing) -->
+  <rect id="btn-scroll-left" class="squeak-btn" x="157" y="138" width="6" height="38" rx="2"
+        fill="#1a1f28" stroke="#9aa6bd" stroke-width="1.1" />
+  <rect id="btn-scroll-right" class="squeak-btn" x="193" y="138" width="6" height="38" rx="2"
+        fill="#1a1f28" stroke="#9aa6bd" stroke-width="1.1" />
 
   <!-- Scroll Mode Latch (Decorative) -->
   <rect x="167" y="210" width="22" height="22" rx="3" fill="#181d26" stroke="#e5e9f0" stroke-width="1.5" />
@@ -89,20 +106,20 @@
 
   <!-- Thumb Cluster: Forward (G5), Back (G4), Sniper (DPI Shift) -->
   <path id="btn-forward" class="squeak-btn"
-        d="M 60 230 L 72 226 L 75 264 L 62 268 Z"
+        d="M 61 232 L 73 228 L 76 266 L 63 270 Z"
         fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
   <path id="btn-back" class="squeak-btn"
-        d="M 62 272 L 75 268 L 78 308 L 64 312 Z"
+        d="M 63 274 L 76 270 L 79 310 L 65 314 Z"
         fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
   <path id="btn-dpi-shift" class="squeak-btn"
-        d="M 44 274 L 58 270 L 60 314 L 44 312 Z"
+        d="M 41 280 L 55 276 L 57 320 L 40 318 Z"
         fill="#222834" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
 
   <!-- Decorative DPI LEDs (3 diagonal bars) -->
   <g id="led-dpi" fill="#3584e4" stroke="#9aa6bd" stroke-width="0.6">
-    <rect x="81" y="254" width="12" height="4" rx="1.5" transform="rotate(-18 87 256)" />
-    <rect x="83" y="272" width="12" height="4" rx="1.5" transform="rotate(-18 89 274)" />
-    <rect x="85" y="290" width="12" height="4" rx="1.5" transform="rotate(-18 91 292)" />
+    <rect x="78" y="254" width="10" height="3.8" rx="1.4" transform="rotate(-18 83 256)" />
+    <rect x="80" y="272" width="10" height="3.8" rx="1.4" transform="rotate(-18 85 274)" />
+    <rect x="82" y="290" width="10" height="3.8" rx="1.4" transform="rotate(-18 87 292)" />
   </g>
 
   <!-- Neutral Logo LED Zone -->
