@@ -569,7 +569,7 @@ mod tests {
         let report = led_get_from_transport(get_mock, DeviceIndex::DIRECT).unwrap();
         assert_eq!(report.feature_version, 3);
         assert_eq!(report.zones.len(), 1);
-        assert_eq!(report.zones[0].location_name, "Logo");
+        assert_eq!(report.zones[0].location_name, "Primary / DPI LEDs");
         assert_eq!(report.zones[0].supported_effects, vec!["static"]);
 
         // 2. led set --dry-run

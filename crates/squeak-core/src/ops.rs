@@ -503,8 +503,8 @@ pub fn read_led_config<T: HidTransport>(
         .into_iter()
         .map(|z| {
             let location_name = match z.location {
-                0x0001 => "Logo".to_string(),
-                0x0002 => "DPI LEDs".to_string(),
+                0x0001 => "Primary / DPI LEDs".to_string(),
+                0x0002 => "Logo / Secondary".to_string(),
                 _ => format!("Zone {}", z.zone_index),
             };
             let supported_effects = z
