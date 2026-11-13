@@ -6,7 +6,8 @@
 use hidpp::{BatteryReading, DpiCapabilities, FirmwareInventory, ReportRateState, SensorDpiState};
 use serde::{Deserialize, Serialize};
 
-use crate::dump::DeviceIdentityDump;
+use crate::device_data::DeviceKind;
+use crate::dump::{DefinitionMatchKind, DeviceIdentityDump, ProbeStatus};
 
 /// Sanitized summary of `DEVICE_NAME` (`0x0005`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -312,6 +313,45 @@ pub struct ReportRateWriteReport {
     pub planned_frame: PlannedWireFrame,
     /// Optional human/safety notice.
     pub note: Option<String>,
+}
+
+/// Sanitized device summary exposed by `squeakd` (`dev.squeak.Daemon::ListDevices`).
+///
+/// Never includes `HID_UNIQ` or per-unit serial numbers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonDeviceSummary {
+    /// Sanitized runtime device key (e.g. `"hidraw6-046d-c08b-ff"`).
+    pub device_key: String,
+    /// Current `/dev/hidraw*` node path.
+    pub path: String,
+    /// Bus (`"USB"`, `"Bluetooth"`, ...).
+    pub bus: String,
+    /// Vendor ID formatted as lowercase hex (`"0x046d"`).
+    pub vendor_id: String,
+    /// Product ID formatted as lowercase hex (`"0xc08b"`).
+    pub product_id: String,
+    /// Kernel-reported HID product string, if any.
+    pub hid_name: Option<String>,
+    /// Target HID++ device index (`"0xFF"` or `"0x01".."0x06"`).
+    pub device_index: String,
+    /// Whether the VID:PID matched a device definition TOML or uses generic mode.
+    pub definition_match: DefinitionMatchKind,
+    /// Display name from definition TOML or kernel HID fallback.
+    pub matched_name: String,
+    /// Device kind (`mouse`, `keyboard`, ...).
+    pub kind: DeviceKind,
+    /// Negotiated HID++ protocol version (e.g. `"4.2"`), if accessible.
+    pub protocol_version: Option<String>,
+    /// Probe/accessibility status.
+    pub probe_status: ProbeStatus,
+    /// Number of runtime-discovered HID++ 2.0 features (`0` if unreachable/asleep).
+    pub feature_count: usize,
+    /// Cached desired sensor-0 DPI target stored by the daemon for reconnect/wake re-apply.
+    pub desired_dpi: Option<u16>,
+    /// Cached desired report rate (Hz) stored by the daemon for reconnect/wake re-apply.
+    pub desired_report_rate_hz: Option<u16>,
+    /// Optional status/troubleshooting hint.
+    pub hint: Option<String>,
 }
 
 #[cfg(test)]

@@ -2,23 +2,14 @@
 
 use std::fmt::Write as _;
 
-use hidpp::{
-    AdjustableDpiDriver, AdjustableDpiFeature, DeviceIndex, DeviceNameDriver, DeviceNameFeature,
-    Dpi, ExtendedReportRateDriver, FeatureId, FeatureTable, FirmwareInfoDriver,
-    FirmwareInfoFeature, HidTransport, HidppFeature, HidppSession, ProtocolError, ReportRate,
-    ReportRateDriver, read_battery, read_report_rate, set_report_rate_verified,
-};
+use hidpp::{DeviceIndex, FeatureId, FeatureTable, HidTransport, HidppSession, ProtocolError};
 use squeak_core::{
-    BatteryStatusReport, DeviceDatabase, DeviceDump, DeviceNameReport, DeviceStatusReport,
-    DpiConfigReport, DpiWriteReport, FirmwareSummaryReport, PlannedWireFrame,
-    ReportRateConfigReport, ReportRateWriteReport, SensorDpiReport,
+    DeviceDatabase, DeviceStatusReport, DpiCapabilitiesReport, DpiConfigReport, DpiWriteReport,
+    ReportRateConfigReport, ReportRateWriteReport, execute_dpi_write, execute_report_rate_write,
+    read_device_status, read_dpi_config, read_report_rate_config,
 };
 
 use crate::commands::CliError;
-
-const FN_DPI_SET: u8 = 3;
-const FN_RATE_SET_STD: u8 = 2;
-const FN_RATE_SET_EXT: u8 = 3;
 
 /// Reads all available M3 device status information (`0x0005`, `0x0003`, battery, `0x2201`,
 /// `0x8060`/`0x8061`) using runtime-discovered feature indices.
@@ -32,61 +23,16 @@ pub fn status_from_transport<T: HidTransport>(
     device_index: DeviceIndex,
     db: &DeviceDatabase,
 ) -> Result<DeviceStatusReport, CliError> {
-    let path = transport.device_info().path.display().to_string();
     let mut session = HidppSession::new(transport);
     let table = FeatureTable::discover(&mut session, device_index)?;
     let info = session.device_info().clone();
-    let resolved = db.resolve(info.vendor_id, info.product_id);
-    let dump = DeviceDump::from_discovery(env!("CARGO_PKG_VERSION"), &info, &table, resolved);
-
-    let mut notices = Vec::new();
-    let device_name = match read_device_name_optional(&mut session, device_index, &table) {
-        Ok(val) => val,
-        Err(err) => {
-            notices.push(format!("DEVICE_NAME read failed: {err}"));
-            None
-        }
-    };
-    let firmware = match read_firmware_optional(&mut session, device_index, &table) {
-        Ok(val) => val,
-        Err(err) => {
-            notices.push(format!("FIRMWARE_INFO read failed: {err}"));
-            None
-        }
-    };
-    let battery = match read_battery(&mut session, &table) {
-        Ok(opt) => opt.map(BatteryStatusReport::from),
-        Err(err) => {
-            notices.push(format!("BATTERY read failed: {err}"));
-            None
-        }
-    };
-    let dpi = match read_dpi_optional(&mut session, device_index, &table, None) {
-        Ok(val) => val,
-        Err(err) => {
-            notices.push(format!("ADJUSTABLE_DPI read failed: {err}"));
-            None
-        }
-    };
-    let report_rate = match read_report_rate_optional(&mut session, &table) {
-        Ok(val) => val,
-        Err(err) => {
-            notices.push(format!("REPORT_RATE read failed: {err}"));
-            None
-        }
-    };
-
-    Ok(DeviceStatusReport {
-        path,
-        device: dump.device,
-        protocol_version: dump.protocol_version,
-        device_name,
-        firmware,
-        battery,
-        dpi,
-        report_rate,
-        notices,
-    })
+    Ok(read_device_status(
+        &mut session,
+        &info,
+        &table,
+        db,
+        env!("CARGO_PKG_VERSION"),
+    ))
 }
 
 /// Reads active and supported DPI state from `ADJUSTABLE_DPI` (`0x2201`).
@@ -101,14 +47,11 @@ pub fn dpi_get_from_transport<T: HidTransport>(
 ) -> Result<DpiConfigReport, CliError> {
     let mut session = HidppSession::new(transport);
     let table = FeatureTable::discover(&mut session, device_index)?;
-    read_dpi_optional(&mut session, device_index, &table, sensor_filter)?.ok_or_else(|| {
-        CliError::Hidpp(
-            ProtocolError::FeatureNotSupported {
-                feature_id: FeatureId::ADJUSTABLE_DPI,
-            }
-            .into(),
-        )
-    })
+    Ok(read_dpi_config(&mut session, &table, sensor_filter)?.ok_or(
+        ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::ADJUSTABLE_DPI,
+        },
+    )?)
 }
 
 /// Validates and either previews (`apply = false`) or applies + readback-verifies (`apply = true`)
@@ -127,83 +70,13 @@ pub fn dpi_set_from_transport<T: HidTransport>(
 ) -> Result<DpiWriteReport, CliError> {
     let mut session = HidppSession::new(transport);
     let table = FeatureTable::discover(&mut session, device_index)?;
-
-    let entry = table.get(FeatureId::ADJUSTABLE_DPI).ok_or_else(|| {
-        CliError::Hidpp(
-            ProtocolError::FeatureNotSupported {
-                feature_id: FeatureId::ADJUSTABLE_DPI,
-            }
-            .into(),
-        )
-    })?;
-    let driver = AdjustableDpiDriver::from_entry(entry)?;
-    if !driver.supports_writes() {
-        return Err(ProtocolError::UnsupportedFeatureVersion {
-            feature_id: FeatureId::ADJUSTABLE_DPI,
-            version: driver.version(),
-            max_supported: AdjustableDpiDriver::MAX_SUPPORTED_VERSION,
-        }
-        .into());
-    }
-
-    let requested = Dpi::new(target_dpi).map_err(hidpp::HidppError::Protocol)?;
-    let count = driver.get_sensor_count(&mut session, device_index)?;
-    if sensor_index >= count {
-        return Err(ProtocolError::InvalidArgument {
-            detail: format!("sensor index {sensor_index} out of range (sensor count is {count})"),
-        }
-        .into());
-    }
-
-    let caps = driver.get_sensor_dpi_list(&mut session, device_index, sensor_index)?;
-    if !caps.supports(requested) {
-        return Err(ProtocolError::InvalidArgument {
-            detail: format!(
-                "requested DPI {} is not supported by sensor {sensor_index} ({})",
-                requested.as_u16(),
-                describe_dpi_caps(&caps),
-            ),
-        }
-        .into());
-    }
-
-    let current_state = driver.get_sensor_dpi(&mut session, device_index, sensor_index)?;
-    let params = AdjustableDpiDriver::encode_set_sensor_dpi_params(sensor_index, requested);
-    let planned_frame = PlannedWireFrame {
-        feature_id: format!("0x{:04X}", FeatureId::ADJUSTABLE_DPI.0),
-        feature_index: driver.feature_index().0,
-        function_id: FN_DPI_SET,
-        params_hex: format_hex_bytes(&params),
-    };
-
-    let note = onboard_profile_note(&table);
-
-    if !apply {
-        return Ok(DpiWriteReport {
-            applied: false,
-            sensor_index,
-            previous_dpi: current_state.current.as_u16(),
-            requested_dpi: requested.as_u16(),
-            readback_dpi: None,
-            verified: false,
-            planned_frame,
-            note,
-        });
-    }
-
-    let verification =
-        driver.set_sensor_dpi_verified(&mut session, device_index, sensor_index, requested)?;
-
-    Ok(DpiWriteReport {
-        applied: true,
+    Ok(execute_dpi_write(
+        &mut session,
+        &table,
         sensor_index,
-        previous_dpi: current_state.current.as_u16(),
-        requested_dpi: requested.as_u16(),
-        readback_dpi: Some(verification.readback.current.as_u16()),
-        verified: verification.readback.current == requested,
-        planned_frame,
-        note,
-    })
+        target_dpi,
+        apply,
+    )?)
 }
 
 /// Reads active and supported polling report rates from `0x8061` or `0x8060`.
@@ -217,14 +90,11 @@ pub fn report_rate_get_from_transport<T: HidTransport>(
 ) -> Result<ReportRateConfigReport, CliError> {
     let mut session = HidppSession::new(transport);
     let table = FeatureTable::discover(&mut session, device_index)?;
-    read_report_rate_optional(&mut session, &table)?.ok_or_else(|| {
-        CliError::Hidpp(
-            ProtocolError::FeatureNotSupported {
-                feature_id: FeatureId::REPORT_RATE,
-            }
-            .into(),
-        )
-    })
+    Ok(read_report_rate_config(&mut session, &table)?.ok_or(
+        ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::REPORT_RATE,
+        },
+    )?)
 }
 
 /// Validates and either previews (`apply = false`) or applies + readback-verifies (`apply = true`)
@@ -240,134 +110,12 @@ pub fn report_rate_set_from_transport<T: HidTransport>(
     hz: u16,
     apply: bool,
 ) -> Result<ReportRateWriteReport, CliError> {
-    let target_rate = parse_report_rate_hz(hz)?;
+    if let Err(err) = squeak_core::parse_report_rate_hz(hz) {
+        return Err(CliError::Usage(err.to_string()));
+    }
     let mut session = HidppSession::new(transport);
     let table = FeatureTable::discover(&mut session, device_index)?;
-
-    let (source_feature, feature_index, version, supports_writes, fn_id, params) =
-        if let Some(entry) = table.get(FeatureId::EXTENDED_REPORT_RATE) {
-            let drv = ExtendedReportRateDriver::from_entry(entry)?;
-            if !drv.supports_writes() {
-                return Err(ProtocolError::UnsupportedFeatureVersion {
-                    feature_id: FeatureId::EXTENDED_REPORT_RATE,
-                    version: drv.version(),
-                    max_supported: ExtendedReportRateDriver::MAX_SUPPORTED_VERSION,
-                }
-                .into());
-            }
-            let encoded = ExtendedReportRateDriver::encode_set_rate_params(target_rate)?;
-            (
-                FeatureId::EXTENDED_REPORT_RATE,
-                drv.feature_index().0,
-                drv.version(),
-                drv.supports_writes(),
-                FN_RATE_SET_EXT,
-                encoded.to_vec(),
-            )
-        } else if let Some(entry) = table.get(FeatureId::REPORT_RATE) {
-            let drv = ReportRateDriver::from_entry(entry)?;
-            if !drv.supports_writes() {
-                return Err(ProtocolError::UnsupportedFeatureVersion {
-                    feature_id: FeatureId::REPORT_RATE,
-                    version: drv.version(),
-                    max_supported: ReportRateDriver::MAX_SUPPORTED_VERSION,
-                }
-                .into());
-            }
-            let encoded = ReportRateDriver::encode_set_rate_params(target_rate)?;
-            (
-                FeatureId::REPORT_RATE,
-                drv.feature_index().0,
-                drv.version(),
-                drv.supports_writes(),
-                FN_RATE_SET_STD,
-                encoded.to_vec(),
-            )
-        } else {
-            return Err(ProtocolError::FeatureNotSupported {
-                feature_id: FeatureId::REPORT_RATE,
-            }
-            .into());
-        };
-
-    let _ = (version, supports_writes);
-    let state = read_report_rate(&mut session, &table)?.ok_or_else(|| {
-        CliError::Hidpp(
-            ProtocolError::FeatureNotSupported {
-                feature_id: source_feature,
-            }
-            .into(),
-        )
-    })?;
-
-    if !state.supported.contains(&target_rate) {
-        let supported_list: Vec<String> = state
-            .supported
-            .iter()
-            .map(|r| format!("{} Hz", r.hz()))
-            .collect();
-        return Err(ProtocolError::InvalidArgument {
-            detail: format!(
-                "requested report rate {} Hz is not supported (device supports: {})",
-                target_rate.hz(),
-                supported_list.join(", ")
-            ),
-        }
-        .into());
-    }
-
-    let planned_frame = PlannedWireFrame {
-        feature_id: format!("0x{:04X}", source_feature.0),
-        feature_index,
-        function_id: fn_id,
-        params_hex: format_hex_bytes(&params),
-    };
-    let note = onboard_profile_note(&table);
-
-    if !apply {
-        return Ok(ReportRateWriteReport {
-            applied: false,
-            source_feature: format!("0x{:04X}", source_feature.0),
-            previous_hz: state.current.hz(),
-            requested_hz: target_rate.hz(),
-            readback_hz: None,
-            verified: false,
-            planned_frame,
-            note,
-        });
-    }
-
-    let verification = set_report_rate_verified(&mut session, &table, target_rate)?;
-    Ok(ReportRateWriteReport {
-        applied: true,
-        source_feature: format!("0x{:04X}", verification.source_feature.0),
-        previous_hz: state.current.hz(),
-        requested_hz: target_rate.hz(),
-        readback_hz: Some(verification.readback.hz()),
-        verified: verification.readback == target_rate,
-        planned_frame,
-        note,
-    })
-}
-
-/// Converts a CLI Hz argument (`125`, `250`, `500`, `1000`, `2000`, `4000`, `8000`) into [`ReportRate`].
-///
-/// # Errors
-///
-/// Returns [`CliError::Usage`] for unsupported frequencies.
-pub fn parse_report_rate_hz(hz: u16) -> Result<ReportRate, CliError> {
-    match hz {
-        125 => Ok(ReportRate::Hz125),
-        250 => Ok(ReportRate::Hz250),
-        500 => Ok(ReportRate::Hz500),
-        1000 => Ok(ReportRate::Hz1000),
-        2000 => Ok(ReportRate::Hz2000),
-        4000 => Ok(ReportRate::Hz4000),
-        8000 => Ok(ReportRate::Hz8000),
-        _ => Err(CliError::Usage(format!(
-            "unsupported polling rate {hz} Hz; valid rates are 125, 250, 500, 1000, 2000, 4000, or 8000"
-        ))),
-    }
+    Ok(execute_report_rate_write(&mut session, &table, hz, apply)?)
 }
 
 /// Formats `squeak status` output for humans.
@@ -573,132 +321,7 @@ pub fn format_report_rate_set_human(report: &ReportRateWriteReport) -> String {
     out.trim_end().to_owned()
 }
 
-fn read_device_name_optional<T: HidTransport>(
-    session: &mut HidppSession<T>,
-    device_index: DeviceIndex,
-    table: &FeatureTable,
-) -> Result<Option<DeviceNameReport>, hidpp::HidppError> {
-    let Some(entry) = table.get(FeatureId::DEVICE_NAME) else {
-        return Ok(None);
-    };
-    let driver = DeviceNameDriver::from_entry(entry)?;
-    let name = driver.get_name(session, device_index)?;
-    let kind = driver.get_device_type(session, device_index)?;
-    Ok(Some(DeviceNameReport {
-        name,
-        device_type: kind.label().to_owned(),
-    }))
-}
-
-fn read_firmware_optional<T: HidTransport>(
-    session: &mut HidppSession<T>,
-    device_index: DeviceIndex,
-    table: &FeatureTable,
-) -> Result<Option<FirmwareSummaryReport>, hidpp::HidppError> {
-    let Some(entry) = table.get(FeatureId::FIRMWARE_INFO) else {
-        return Ok(None);
-    };
-    let driver = FirmwareInfoDriver::from_entry(entry)?;
-    let inv = driver.read_inventory(session, device_index)?;
-    Ok(Some(FirmwareSummaryReport::from_inventory(&inv)))
-}
-
-fn read_dpi_optional<T: HidTransport>(
-    session: &mut HidppSession<T>,
-    device_index: DeviceIndex,
-    table: &FeatureTable,
-    sensor_filter: Option<u8>,
-) -> Result<Option<DpiConfigReport>, hidpp::HidppError> {
-    let Some(entry) = table.get(FeatureId::ADJUSTABLE_DPI) else {
-        return Ok(None);
-    };
-    let driver = AdjustableDpiDriver::from_entry(entry)?;
-    let count = driver.get_sensor_count(session, device_index)?;
-
-    let indices: Vec<u8> = match sensor_filter {
-        Some(idx) => {
-            if idx >= count {
-                return Err(ProtocolError::InvalidArgument {
-                    detail: format!("sensor index {idx} out of range (sensor count is {count})"),
-                }
-                .into());
-            }
-            vec![idx]
-        }
-        None => (0..count).collect(),
-    };
-
-    let mut sensors = Vec::with_capacity(indices.len());
-    for idx in indices {
-        let caps = driver.get_sensor_dpi_list(session, device_index, idx)?;
-        let state = driver.get_sensor_dpi(session, device_index, idx)?;
-        sensors.push(SensorDpiReport::from_state(state, &caps));
-    }
-
-    Ok(Some(DpiConfigReport {
-        feature_version: driver.version(),
-        write_supported: driver.supports_writes(),
-        sensors,
-    }))
-}
-
-fn read_report_rate_optional<T: HidTransport>(
-    session: &mut HidppSession<T>,
-    table: &FeatureTable,
-) -> Result<Option<ReportRateConfigReport>, hidpp::HidppError> {
-    let Some(state) = read_report_rate(session, table)? else {
-        return Ok(None);
-    };
-    let (version, write_supported) = match table.get(state.source_feature) {
-        Some(entry) if state.source_feature == FeatureId::EXTENDED_REPORT_RATE => {
-            let drv = ExtendedReportRateDriver::from_entry(entry)?;
-            (drv.version(), drv.supports_writes())
-        }
-        Some(entry) => {
-            let drv = ReportRateDriver::from_entry(entry)?;
-            (drv.version(), drv.supports_writes())
-        }
-        None => (0, false),
-    };
-    Ok(Some(ReportRateConfigReport::from_state(
-        &state,
-        version,
-        write_supported,
-    )))
-}
-
-fn onboard_profile_note(table: &FeatureTable) -> Option<String> {
-    table.get(FeatureId::ONBOARD_PROFILES).map(|_| {
-        "Device exposes ONBOARD_PROFILES (0x8100); if onboard memory mode is active, volatile host changes may be overridden by the active onboard profile.".to_owned()
-    })
-}
-
-fn describe_dpi_caps(caps: &hidpp::DpiCapabilities) -> String {
-    let mut parts = Vec::new();
-    if !caps.discrete.is_empty() {
-        let vals: Vec<String> = caps
-            .discrete
-            .iter()
-            .map(|d| d.as_u16().to_string())
-            .collect();
-        parts.push(format!("discrete: [{}]", vals.join(", ")));
-    }
-    for r in &caps.ranges {
-        parts.push(format!(
-            "range {}..={} step {}",
-            r.min.as_u16(),
-            r.max.as_u16(),
-            r.step
-        ));
-    }
-    if parts.is_empty() {
-        "none".to_owned()
-    } else {
-        parts.join("; ")
-    }
-}
-
-fn describe_caps_report(caps: &squeak_core::DpiCapabilitiesReport) -> String {
+fn describe_caps_report(caps: &DpiCapabilitiesReport) -> String {
     let mut parts = Vec::new();
     if !caps.discrete.is_empty() {
         parts.push(format!("discrete: {}", join_u16(&caps.discrete, "")));
@@ -719,14 +342,6 @@ fn join_u16(values: &[u16], suffix: &str) -> String {
         .map(|v| format!("{v}{suffix}"))
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn format_hex_bytes(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|b| format!("{b:02X}"))
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 #[cfg(test)]
