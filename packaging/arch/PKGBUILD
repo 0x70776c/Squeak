@@ -1,0 +1,49 @@
+# Maintainer: Squeak Contributors
+pkgname=squeak
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Open-source HID++ 2.0 peripheral configurator, daemon, and CLI"
+arch=('x86_64' 'aarch64')
+url="https://github.com/0x70776c/Squeak"
+license=('GPL-3.0-or-later')
+depends=('gtk4' 'libadwaita' 'polkit')
+makedepends=('cargo' 'rust' 'pkgconf')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "Squeak-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "Squeak-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release --workspace
+}
+
+check() {
+  cd "Squeak-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --workspace --all-features
+}
+
+package() {
+  cd "Squeak-$pkgver"
+  install -Dm755 target/release/squeakd "$pkgdir/usr/bin/squeakd"
+  install -Dm755 target/release/squeak "$pkgdir/usr/bin/squeak"
+  install -Dm755 target/release/squeak-gui "$pkgdir/usr/bin/squeak-gui"
+
+  install -Dm644 data/applications/dev.squeak.Squeak.desktop "$pkgdir/usr/share/applications/dev.squeak.Squeak.desktop"
+  install -Dm644 data/metainfo/dev.squeak.Squeak.metainfo.xml "$pkgdir/usr/share/metainfo/dev.squeak.Squeak.metainfo.xml"
+  install -Dm644 data/icons/hicolor/scalable/apps/dev.squeak.Squeak.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/dev.squeak.Squeak.svg"
+  install -Dm644 data/icons/hicolor/128x128/apps/dev.squeak.Squeak.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/dev.squeak.Squeak.png"
+  install -Dm644 data/icons/hicolor/256x256/apps/dev.squeak.Squeak.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/dev.squeak.Squeak.png"
+  install -Dm644 data/icons/hicolor/512x512/apps/dev.squeak.Squeak.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/dev.squeak.Squeak.png"
+
+  install -Dm644 data/dbus/dev.squeak.Daemon.service "$pkgdir/usr/share/dbus-1/services/dev.squeak.Daemon.service"
+  install -Dm644 data/systemd/squeakd.service "$pkgdir/usr/lib/systemd/user/squeakd.service"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build Linux Release Tarball (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config desktop-file-utils appstream
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run quality gate
+        run: |
+          cargo fmt --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings -D unused-crate-dependencies
+          cargo test --workspace --all-features --locked
+
+      - name: Validate desktop & AppStream metadata
+        run: |
+          desktop-file-validate data/applications/dev.squeak.Squeak.desktop
+          appstreamcli validate --no-net data/metainfo/dev.squeak.Squeak.metainfo.xml
+
+      - name: Build release binaries
+        run: cargo build --release --workspace --locked --target ${{ matrix.target }}
+
+      - name: Package release archive
+        run: |
+          STAGE="squeak-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "$STAGE/bin"
+          cp "target/${{ matrix.target }}/release/squeak" "$STAGE/bin/"
+          cp "target/${{ matrix.target }}/release/squeakd" "$STAGE/bin/"
+          cp "target/${{ matrix.target }}/release/squeak-gui" "$STAGE/bin/"
+          cp -r data "$STAGE/data"
+          cp LICENSE README.md CHANGELOG.md "$STAGE/"
+          tar -czvf "${STAGE}.tar.gz" "$STAGE"
+          sha256sum "${STAGE}.tar.gz" > "${STAGE}.tar.gz.sha256"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            squeak-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+            squeak-${{ github.ref_name }}-${{ matrix.target }}.tar.gz.sha256
+          generate_release_notes: true

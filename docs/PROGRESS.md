@@ -143,8 +143,12 @@ Status legend:
 > - **Next:** M9 (Packaging & Release).
 
 ## M9 – Packaging & Release
-- [ ] Flatpak manifest (`org.gnome.Platform`, `--device=all`, `rust-stable` ext)
-- [ ] `packaging/` recipes: RPM spec (COPR), `debian/`, `PKGBUILD`, Nix flake
-- [ ] AppStream metainfo, `.desktop`, scalable icon (Squeak branding, no vendor marks)
-- [ ] `CHANGELOG.md`, `docs/device-support.md`, `docs/contributing-a-device.md`
-- [ ] Release workflow + `v0.1.0` tag proposal
+- [x] Flatpak manifest (`org.gnome.Platform`, `--device=all`, `rust-stable` ext)
+- [x] `packaging/` recipes: RPM spec (COPR), `debian/`, `PKGBUILD`, Nix flake
+- [x] AppStream metainfo, `.desktop`, scalable icon (Squeak branding, no vendor marks)
+- [x] `CHANGELOG.md`, `docs/device-support.md`, `docs/contributing-a-device.md`
+- [x] Release workflow + `v0.1.0` tag proposal
+
+> **M9 Summary**
+> - **Done:** Added Flatpak manifest (`packaging/flatpak/dev.squeak.Squeak.yml`), RPM spec (`packaging/rpm/squeak.spec`), Debian packaging (`packaging/debian/`), Arch `PKGBUILD` (`packaging/arch/PKGBUILD`), Nix `flake.nix`, AppStream metainfo (`data/metainfo/dev.squeak.Squeak.metainfo.xml`), scalable Squeak SVG icon (`data/icons/hicolor/scalable/apps/dev.squeak.Squeak.svg`), `CHANGELOG.md`, `docs/device-support.md`, `docs/contributing-a-device.md`, and `.github/workflows/release.yml` for `v0.1.0`.
+> - **Next:** Ready to tag `v0.1.0` once reviewed.

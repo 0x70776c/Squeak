@@ -1,0 +1,24 @@
+#!/usr/bin/make -f
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --workspace --locked
+
+override_dh_auto_test:
+	cargo test --workspace --all-features --locked
+
+override_dh_auto_install:
+	install -Dm755 target/release/squeakd debian/squeak/usr/bin/squeakd
+	install -Dm755 target/release/squeak debian/squeak/usr/bin/squeak
+	install -Dm755 target/release/squeak-gui debian/squeak/usr/bin/squeak-gui
+	install -Dm644 data/applications/dev.squeak.Squeak.desktop debian/squeak/usr/share/applications/dev.squeak.Squeak.desktop
+	install -Dm644 data/metainfo/dev.squeak.Squeak.metainfo.xml debian/squeak/usr/share/metainfo/dev.squeak.Squeak.metainfo.xml
+	install -Dm644 data/icons/hicolor/scalable/apps/dev.squeak.Squeak.svg debian/squeak/usr/share/icons/hicolor/scalable/apps/dev.squeak.Squeak.svg
+	install -Dm644 data/icons/hicolor/128x128/apps/dev.squeak.Squeak.png debian/squeak/usr/share/icons/hicolor/128x128/apps/dev.squeak.Squeak.png
+	install -Dm644 data/icons/hicolor/256x256/apps/dev.squeak.Squeak.png debian/squeak/usr/share/icons/hicolor/256x256/apps/dev.squeak.Squeak.png
+	install -Dm644 data/icons/hicolor/512x512/apps/dev.squeak.Squeak.png debian/squeak/usr/share/icons/hicolor/512x512/apps/dev.squeak.Squeak.png
+	install -Dm644 data/dbus/dev.squeak.Daemon.service debian/squeak/usr/share/dbus-1/services/dev.squeak.Daemon.service
+	install -Dm644 data/systemd/squeakd.service debian/squeak/usr/lib/systemd/user/squeakd.service

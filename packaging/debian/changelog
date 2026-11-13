@@ -1,0 +1,5 @@
+squeak (0.1.0-1) unstable; urgency=medium
+
+  * Initial release (hidpp crate, squeakd D-Bus daemon, squeak CLI, squeak-gui).
+
+ -- Squeak Contributors <maintainers@squeak.dev>  Fri, 13 Nov 2026 22:45:00 +0100

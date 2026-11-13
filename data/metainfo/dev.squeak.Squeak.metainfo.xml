@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.squeak.Squeak</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Squeak</name>
+  <summary>Open-source HID++ 2.0 peripheral configurator for Linux</summary>
+
+  <description>
+    <p>
+      Squeak is an open-source Linux desktop application, background daemon, and CLI
+      for configuring HID++ 2.0 pointing devices without proprietary software.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Adjustable sensor DPI, polling report rate, and scroll wheel settings</li>
+      <li>Interactive mouse button diagram with button remapping and live spy mode</li>
+      <li>Per-zone RGB lighting effects with interactive color picker</li>
+      <li>Onboard memory profile switching, sector backup, and restore</li>
+      <li>XDG TOML software profiles with per-application auto-switching on GNOME, KDE Plasma, and Hyprland</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">dev.squeak.Squeak.desktop</launchable>
+
+  <url type="homepage">https://github.com/0x70776c/Squeak</url>
+  <url type="bugtracker">https://github.com/0x70776c/Squeak/issues</url>
+
+  <provides>
+    <binary>squeak-gui</binary>
+    <binary>squeakd</binary>
+    <binary>squeak</binary>
+    <dbus type="user">dev.squeak.Daemon</dbus>
+  </provides>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-11-13">
+      <description>
+        <p>Initial release with hidpp protocol crate, squeakd D-Bus daemon, squeak CLI, GTK4/libadwaita GUI, and per-app software profiles.</p>
+      </description>
+    </release>
+  </releases>
+</component>

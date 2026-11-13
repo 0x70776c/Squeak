@@ -1,0 +1,42 @@
+app-id: dev.squeak.Squeak
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: squeak-gui
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=all
+  - --talk-name=dev.squeak.Daemon
+  - --own-name=dev.squeak.Daemon
+  - --filesystem=xdg-config/squeak:create
+  - --filesystem=xdg-data/squeak:create
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/squeak/cargo
+
+modules:
+  - name: squeak
+    buildsystem: simple
+    build-commands:
+      - cargo --offline build --release --workspace --locked
+      - install -Dm755 target/release/squeakd /app/bin/squeakd
+      - install -Dm755 target/release/squeak /app/bin/squeak
+      - install -Dm755 target/release/squeak-gui /app/bin/squeak-gui
+      - install -Dm644 data/applications/dev.squeak.Squeak.desktop /app/share/applications/dev.squeak.Squeak.desktop
+      - install -Dm644 data/metainfo/dev.squeak.Squeak.metainfo.xml /app/share/metainfo/dev.squeak.Squeak.metainfo.xml
+      - install -Dm644 data/icons/hicolor/scalable/apps/dev.squeak.Squeak.svg /app/share/icons/hicolor/scalable/apps/dev.squeak.Squeak.svg
+      - install -Dm644 data/icons/hicolor/128x128/apps/dev.squeak.Squeak.png /app/share/icons/hicolor/128x128/apps/dev.squeak.Squeak.png
+      - install -Dm644 data/icons/hicolor/256x256/apps/dev.squeak.Squeak.png /app/share/icons/hicolor/256x256/apps/dev.squeak.Squeak.png
+      - install -Dm644 data/icons/hicolor/512x512/apps/dev.squeak.Squeak.png /app/share/icons/hicolor/512x512/apps/dev.squeak.Squeak.png
+      - install -Dm644 data/dbus/dev.squeak.Daemon.service /app/share/dbus-1/services/dev.squeak.Daemon.service
+    sources:
+      - type: dir
+        path: ../..
+      # Before building in Flathub/offline sandboxes, generate cargo-sources.json via flatpak-cargo-generator.

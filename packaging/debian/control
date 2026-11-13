@@ -1,0 +1,21 @@
+Source: squeak
+Section: utils
+Priority: optional
+Maintainer: Squeak Contributors <maintainers@squeak.dev>
+Build-Depends: debhelper-compat (= 13),
+               cargo (>= 1.89),
+               rustc (>= 1.89),
+               pkg-config,
+               libgtk-4-dev (>= 4.6),
+               libadwaita-1-dev (>= 1.1)
+Standards-Version: 4.6.2
+Homepage: https://github.com/0x70776c/Squeak
+Rules-Requires-Root: no
+
+Package: squeak
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, policykit-1 | polkitd
+Description: Open-source HID++ 2.0 peripheral configurator, daemon, and CLI
+ Squeak is an open-source Linux desktop application (squeak-gui), D-Bus
+ daemon (squeakd), and CLI (squeak) for configuring HID++ 2.0 pointing
+ devices without proprietary software.
