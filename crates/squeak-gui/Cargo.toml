@@ -7,16 +7,18 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# Note (ADR-002): gtk4 ("0.10", feature "v4_6") and libadwaita ("0.8", feature "v1_1",
-# plus optional feature-gated "adw_v1_4" fallback) are wired in M7.
+[features]
+default = ["adw_v1_4"]
+adw_v1_4 = ["libadwaita/v1_4"]
 
 [dependencies]
 futures-lite.workspace = true
+gtk4 = { version = "0.10", features = ["v4_6"] }
+libadwaita = { version = "0.8", features = ["v1_1"] }
 serde.workspace = true
 serde_json.workspace = true
 squeak-core.workspace = true
 tokio.workspace = true
-tracing.workspace = true
 zbus.workspace = true
 
 [lints]

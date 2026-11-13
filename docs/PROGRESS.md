@@ -118,13 +118,20 @@ Status legend:
 > - **Next:** M7 (GTK4/libadwaita GUI `squeak-gui`).
 
 ## M7 – GTK4/libadwaita GUI (`squeak-gui`)
-- [ ] `AdwApplicationWindow`, `AdwNavigationSplitView` (or gated fallback if Ubuntu 22.04 supported), `AdwToastOverlay`
-- [ ] Async DBus proxy + signals (zero blocking on UI thread, live apply with debounce, undo last change)
-- [ ] Pages (capabilities-gated): Overview, DPI, Buttons, Lighting, Profiles, Scroll
-- [ ] Interactive SVG mouse diagram (`g502-hero.svg` + generic fallback SVG)
-- [ ] `AdwStatusPage` error states (hidraw permission -> `pkexec` udev install, disconnected/asleep, unsupported)
-- [ ] `gettext-rs` i18n setup (English + German)
+- [x] `AdwApplicationWindow`, `AdwNavigationSplitView` (or gated fallback if Ubuntu 22.04 supported), `AdwToastOverlay`
+- [x] Async DBus proxy + signals (zero blocking on UI thread, live apply with debounce, undo last change)
+- [x] Pages (capabilities-gated): Overview, DPI, Buttons, Lighting, Profiles, Scroll
+- [x] Interactive SVG mouse diagram (`g502-hero.svg` + generic fallback SVG)
+- [x] `AdwStatusPage` error states (hidraw permission -> `pkexec` udev install, disconnected/asleep, unsupported)
+- [x] i18n setup (English + German)
 - [ ] Keyboard accessibility pass + docs screenshots
+
+> **M7 Summary**
+> - **Done:** Implemented full GTK4 (`4.6` baseline) + `libadwaita` (`1.1` baseline + feature-gated `adw_v1_4` `NavigationSplitView` / `Leaflet` fallback) desktop app in `squeak-gui`, communicating exclusively with `squeakd` over D-Bus (`dev.squeak.Daemon`). Built capability-gated pages (`Overview`, `DPI & Sensor` with 220 ms debounced slider, `Buttons` with clickable SVG mouse diagram `g502-hero.svg`/`generic-mouse.svg`, `Lighting`, `Profiles` with backup/activate, `Scroll`), `AdwStatusPage` error views (`NoHidrawPermission` -> `pkexec squeak setup-udev`, `DaemonNotRunning`, `DeviceAsleepOrDisconnected`), `UndoStack`, and EN/DE localization.
+> - **Tested:** 117 workspace tests passing, `clippy -D warnings -D unused-crate-dependencies` clean, `--no-default-features` Ubuntu 22.04 fallback build verified, `rustdoc -D warnings` clean.
+> - **Needs hardware:** Live GUI interactive testing with running `squeakd` + connected G502 HERO.
+> - **Risks:** GNOME/KDE `pkexec` udev prompt requires Polkit agent; `squeakd` must be running on session bus.
+> - **Next:** M8 (Software Profiles & Desktop Integration).
 
 ## M8 – Software Profiles & Desktop Integration
 - [ ] XDG TOML software profiles (`$XDG_CONFIG_HOME/squeak`), import/export

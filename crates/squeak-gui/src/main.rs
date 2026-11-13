@@ -5,22 +5,17 @@
 
 #![forbid(unsafe_code)]
 
+pub mod backend;
 pub mod dbus_client;
 pub mod i18n;
 pub mod state;
 pub mod svg_diagram;
+pub mod ui;
 
-use futures_lite as _;
 use serde as _;
-use serde_json as _;
-use tokio as _;
-use tracing as _;
 
-fn main() {
-    println!(
-        "squeak-gui {} (D-Bus client ready)",
-        env!("CARGO_PKG_VERSION")
-    );
+fn main() -> gtk4::glib::ExitCode {
+    ui::launch_gui()
 }
 
 #[cfg(test)]
