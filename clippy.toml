@@ -1,0 +1,27 @@
+msrv = "1.89.0"
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+doc-valid-idents = [
+    "HID++",
+    "D-Bus",
+    "DBus",
+    "GTK4",
+    "Wayland",
+    "G502",
+    "DPI",
+    "RGB",
+    "LED",
+    "LEDs",
+    "CRC",
+    "TOML",
+    "SVG",
+    "XDG",
+    "Flatpak",
+    "COPR",
+    "PKGBUILD",
+    "libadwaita",
+    "hidraw",
+    "udev",
+    "zbus",
+]

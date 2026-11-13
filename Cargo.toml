@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/hidpp",
+    "crates/squeak-core",
+    "crates/squeakd",
+    "crates/squeak-cli",
+    "crates/squeak-gui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/0x70776c/Squeak"
+homepage = "https://github.com/0x70776c/Squeak"
+authors = ["Squeak Contributors"]
+
+[workspace.dependencies]
+hidpp = { path = "crates/hidpp" }
+squeak-core = { path = "crates/squeak-core" }
+
+clap = { version = "4.6", features = ["derive"] }
+proptest = "1.12"
+rustix = { version = "1.1", features = ["event", "fs", "io"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+toml = "1.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"

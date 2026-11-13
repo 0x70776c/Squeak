@@ -1,0 +1,15 @@
+[package]
+name = "hidpp"
+description = "Pure HID++ 2.0 protocol framing, discovery, and feature decoders over a HidTransport trait"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
