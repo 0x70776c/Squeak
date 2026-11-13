@@ -10,6 +10,7 @@ pub mod dbus;
 pub mod error;
 pub mod hotplug;
 pub mod registry;
+pub mod window_watcher;
 
 // Silence unused-crate-dependencies lint when compiling as a library,
 // as these dependencies are consumed by the squeakd binary.

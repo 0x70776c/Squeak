@@ -8,14 +8,16 @@ use hidpp::{
     DeviceIndex, FeatureCache, FeatureId, HidDeviceInfo, HidTransport, HidppError, HidppSession,
     HidrawTransport, ProtocolError, TransportError, discover_hidpp_devices,
 };
+use serde::Serialize;
 use squeak_core::{
     ButtonsReport, DaemonDeviceSummary, DefinitionMatchKind, DeviceDatabase, DeviceDump,
     DeviceStatusReport, DpiWriteReport, LedConfigReport, LedWriteReport, OnboardModeReport,
     OnboardModeWriteReport, ProbeStatus, ProfileBackupReport, ProfileSetActiveReport,
-    ProfilesListReport, ReportRateWriteReport, ScrollConfigReport, execute_dpi_write,
-    execute_host_mode_write, execute_led_write, execute_profile_backup, execute_report_rate_write,
-    execute_set_active_profile, parse_led_effect_spec, read_buttons_report, read_device_status,
-    read_led_config, read_onboard_mode, read_profiles_summary, read_scroll_config,
+    ProfilesListReport, ReportRateWriteReport, ScrollConfigReport, SoftwareProfile,
+    execute_dpi_write, execute_host_mode_write, execute_led_write, execute_profile_backup,
+    execute_report_rate_write, execute_set_active_profile, parse_led_effect_spec,
+    read_buttons_report, read_device_status, read_led_config, read_onboard_mode,
+    read_profiles_summary, read_scroll_config,
 };
 use tracing::{debug, info, warn};
 
@@ -79,6 +81,25 @@ pub struct WakeOutcome {
     pub reapplied: Vec<(String, String)>,
     /// Non-fatal errors encountered per device during wake re-apply (`(device_key, error)`).
     pub failures: Vec<(String, String)>,
+}
+
+/// Summary returned by [`DeviceRegistry::apply_software_profile`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SoftwareProfileApplyReport {
+    /// Software profile name.
+    pub profile_name: String,
+    /// Target device key.
+    pub device_key: String,
+    /// Whether this was a dry-run preview without hardware writes.
+    pub dry_run: bool,
+    /// Operating mode applied (`"host"` or `"onboard"`), if configured.
+    pub onboard_mode_applied: Option<String>,
+    /// DPI applied to sensor 0, if configured.
+    pub dpi_applied: Option<u16>,
+    /// Polling report rate applied in Hz, if configured.
+    pub report_rate_hz_applied: Option<u16>,
+    /// LED zone indices applied, if configured.
+    pub led_zones_applied: Vec<u8>,
 }
 
 /// Serial-free signature used to remember volatile host preferences across replug/wake.
@@ -623,6 +644,68 @@ impl<B: DeviceBackend> DeviceRegistry<B> {
     pub fn get_scroll_config(&mut self, selector: &str) -> Result<ScrollConfigReport, DaemonError> {
         self.with_ready_session(selector, |session, table, _, _| {
             Ok(read_scroll_config(session, table))
+        })
+    }
+
+    /// Applies (or dry-runs) a [`SoftwareProfile`] to `selector`.
+    ///
+    /// Applies `onboard_mode`, `dpi` (sensor 0), `report_rate_hz`, and per-zone `led`
+    /// effects in sequence using the single-owner device session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if `selector` cannot be resolved or any device write fails.
+    pub fn apply_software_profile(
+        &mut self,
+        selector: &str,
+        profile: &SoftwareProfile,
+        dry_run: bool,
+    ) -> Result<SoftwareProfileApplyReport, DaemonError> {
+        let key = self.resolve_selector(selector)?;
+
+        let onboard_mode_applied = if let Some(ref mode) = profile.onboard_mode {
+            self.set_onboard_mode(&key, mode, dry_run)?;
+            Some(mode.clone())
+        } else {
+            None
+        };
+
+        let dpi_applied = if let Some(dpi) = profile.dpi {
+            self.set_dpi(&key, 0, dpi, dry_run)?;
+            Some(dpi)
+        } else {
+            None
+        };
+
+        let report_rate_hz_applied = if let Some(hz) = profile.report_rate_hz {
+            self.set_report_rate(&key, hz, dry_run)?;
+            Some(hz)
+        } else {
+            None
+        };
+
+        let mut led_zones_applied = Vec::with_capacity(profile.led.len());
+        for zone in &profile.led {
+            self.set_led_effect(
+                &key,
+                zone.zone_index,
+                &zone.effect,
+                zone.color_hex.as_deref(),
+                zone.period_ms,
+                zone.brightness_pct,
+                dry_run,
+            )?;
+            led_zones_applied.push(zone.zone_index);
+        }
+
+        Ok(SoftwareProfileApplyReport {
+            profile_name: profile.name.clone(),
+            device_key: key,
+            dry_run,
+            onboard_mode_applied,
+            dpi_applied,
+            report_rate_hz_applied,
+            led_zones_applied,
         })
     }
 

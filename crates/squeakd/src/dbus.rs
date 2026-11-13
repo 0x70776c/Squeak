@@ -4,6 +4,10 @@
 use std::sync::Arc;
 
 use futures_lite::StreamExt;
+use squeak_core::{
+    SoftwareProfile, delete_profile_from_dir, load_profiles_from_dir, sanitize_profile_slug,
+    save_profile_to_dir, xdg_profiles_dir,
+};
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 use zbus::object_server::{InterfaceRef, SignalEmitter};
@@ -326,6 +330,75 @@ impl<B: DeviceBackend> SqueakDaemonInterface<B> {
         serde_json::to_string_pretty(&report)
             .map_err(DaemonError::Json)
             .map_err(Into::into)
+    }
+
+    /// Lists all XDG TOML software profiles as JSON array of `SoftwareProfile`.
+    async fn list_software_profiles(&self) -> zbus::fdo::Result<String> {
+        let dir = xdg_profiles_dir();
+        let profiles = load_profiles_from_dir(&dir)
+            .map_err(|e| DaemonError::InvalidArgument(e.to_string()))?;
+        serde_json::to_string_pretty(&profiles)
+            .map_err(DaemonError::Json)
+            .map_err(Into::into)
+    }
+
+    /// Saves a TOML-encoded software profile under `$XDG_CONFIG_HOME/squeak/profiles/` and returns the saved path.
+    async fn save_software_profile(&self, toml_str: &str) -> zbus::fdo::Result<String> {
+        let profile = SoftwareProfile::from_toml_str(toml_str)
+            .map_err(|e| DaemonError::InvalidArgument(e.to_string()))?;
+        let dir = xdg_profiles_dir();
+        let path = save_profile_to_dir(&dir, &profile)
+            .map_err(|e| DaemonError::InvalidArgument(e.to_string()))?;
+        Ok(path.display().to_string())
+    }
+
+    /// Deletes an XDG TOML software profile by name and returns the removed path.
+    async fn delete_software_profile(&self, profile_name: &str) -> zbus::fdo::Result<String> {
+        let dir = xdg_profiles_dir();
+        let path = delete_profile_from_dir(&dir, profile_name)
+            .map_err(|e| DaemonError::InvalidArgument(e.to_string()))?;
+        Ok(path.display().to_string())
+    }
+
+    /// Applies (or dry-runs) a named XDG software profile to `device_key` and returns JSON `SoftwareProfileApplyReport`.
+    async fn apply_software_profile(
+        &self,
+        device_key: &str,
+        profile_name: &str,
+        dry_run: bool,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<String> {
+        let target_slug = sanitize_profile_slug(profile_name)
+            .map_err(|e| DaemonError::InvalidArgument(e.to_string()))?;
+        let dir = xdg_profiles_dir();
+        let profiles = load_profiles_from_dir(&dir)
+            .map_err(|e| DaemonError::InvalidArgument(e.to_string()))?;
+        let profile = profiles
+            .into_iter()
+            .find(|p| sanitize_profile_slug(&p.name).ok().as_deref() == Some(target_slug.as_str()))
+            .ok_or_else(|| {
+                DaemonError::InvalidArgument(format!("software profile '{profile_name}' not found"))
+            })?;
+
+        let res = {
+            let mut guard = self.registry.lock().await;
+            guard.apply_software_profile(device_key, &profile, dry_run)
+        };
+        match res {
+            Ok(report) => {
+                if !dry_run {
+                    let setting = format!("software_profile={}", profile.name);
+                    let _ = Self::device_settings_applied(&emitter, device_key, &setting).await;
+                }
+                serde_json::to_string_pretty(&report)
+                    .map_err(DaemonError::Json)
+                    .map_err(Into::into)
+            }
+            Err(err) => {
+                let _ = Self::device_error(&emitter, device_key, &err.to_string()).await;
+                Err(err.into())
+            }
+        }
     }
 
     /// Re-scans endpoints, updates registry, and emits `DevicesChanged` when endpoints change.

@@ -9,13 +9,13 @@ use hidpp::{
 };
 use squeak_core::{
     DefinitionMatchKind, DeviceDataError, DeviceDatabase, DeviceDump, DeviceInfoReport,
-    DeviceListEntry, ProbeStatus,
+    DeviceListEntry, ProbeStatus, xdg_profiles_dir,
 };
 use thiserror::Error;
 
 use crate::cli::{
     ButtonsCommand, Cli, Command, DpiCommand, HostModeCommand, LedCommand, ListArgs,
-    ProfilesCommand, ReportRateCommand, TargetArgs,
+    ProfilesCommand, ReportRateCommand, SwProfilesCommand, TargetArgs,
 };
 use crate::m3::{
     dpi_get_from_transport, dpi_set_from_transport, format_dpi_get_human, format_dpi_set_human,
@@ -32,6 +32,11 @@ use crate::m6::{
     format_profiles_backup_human, format_profiles_list_human, format_profiles_restore_human,
     format_profiles_set_active_human, profiles_backup_from_transport, profiles_list_from_transport,
     profiles_restore_from_transport, profiles_set_active_from_transport,
+};
+use crate::m8::{
+    format_sw_profile_apply_human, format_sw_profile_file_human, format_sw_profiles_list_human,
+    sw_profiles_apply_from_transport, sw_profiles_delete, sw_profiles_export, sw_profiles_import,
+    sw_profiles_list, sw_profiles_save,
 };
 use crate::udev::{UdevSetupError, format_setup_udev_human, run_setup_udev};
 
@@ -190,6 +195,42 @@ pub fn execute(cli: Cli) -> Result<String, CliError> {
                 format_output(&report, cli.json, format_profiles_set_active_human)
             }
         },
+        Command::SwProfiles(args) => {
+            let dir = xdg_profiles_dir();
+            match args.action {
+                SwProfilesCommand::List => {
+                    let profiles = sw_profiles_list(&dir)?;
+                    format_output(&profiles, cli.json, format_sw_profiles_list_human)
+                }
+                SwProfilesCommand::Save(save_args) => {
+                    let report = sw_profiles_save(&dir, &save_args)?;
+                    format_output(&report, cli.json, format_sw_profile_file_human)
+                }
+                SwProfilesCommand::Apply(apply_args) => {
+                    let (device_index, transport) = open_selected_transport(&apply_args.target)?;
+                    let report = sw_profiles_apply_from_transport(
+                        transport,
+                        device_index,
+                        &dir,
+                        &apply_args.name,
+                        apply_args.apply,
+                    )?;
+                    format_output(&report, cli.json, format_sw_profile_apply_human)
+                }
+                SwProfilesCommand::Export(export_args) => {
+                    let report = sw_profiles_export(&dir, &export_args.name, &export_args.out)?;
+                    format_output(&report, cli.json, format_sw_profile_file_human)
+                }
+                SwProfilesCommand::Import(import_args) => {
+                    let report = sw_profiles_import(&dir, &import_args.file)?;
+                    format_output(&report, cli.json, format_sw_profile_file_human)
+                }
+                SwProfilesCommand::Delete(delete_args) => {
+                    let report = sw_profiles_delete(&dir, &delete_args.name)?;
+                    format_output(&report, cli.json, format_sw_profile_file_human)
+                }
+            }
+        }
         Command::DumpDevice(args) => run_dump_device(&args, &db, cli.json),
         Command::SetupUdev(args) => {
             let report = run_setup_udev(args.dry_run)?;

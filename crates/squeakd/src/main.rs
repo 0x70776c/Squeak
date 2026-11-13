@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use clap::Parser;
-use squeak_core::DeviceDatabase;
+use squeak_core::{DeviceDatabase, load_profiles_from_dir, xdg_profiles_dir};
 use squeakd::dbus::{
     DBUS_BUS_NAME, DBUS_OBJECT_PATH, SqueakDaemonInterface, broadcast_sync_outcome,
     spawn_login1_wake_watcher,
@@ -18,6 +18,7 @@ use squeakd::dbus::{
 use squeakd::error::DaemonError;
 use squeakd::hotplug::spawn_netlink_hotplug_watcher;
 use squeakd::registry::{DeviceRegistry, RealHidrawBackend};
+use squeakd::window_watcher::{ActiveWindowProvider, AutoWindowProvider, WindowMatchTracker};
 use tokio::sync::{Mutex, mpsc};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
@@ -130,6 +131,59 @@ async fn run_daemon(cli: DaemonCli) -> Result<(), DaemonError> {
         }
     });
 
+    let window_task = tokio::spawn({
+        let shared = Arc::clone(&shared);
+        let shutdown_flag = Arc::clone(&shutdown_flag);
+        async move {
+            let provider = AutoWindowProvider;
+            let mut tracker = WindowMatchTracker::new();
+            let profiles_dir = xdg_profiles_dir();
+            while !shutdown_flag.load(Ordering::Relaxed) {
+                sleep(Duration::from_millis(750)).await;
+                if shutdown_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+                let Ok(profiles) = load_profiles_from_dir(&profiles_dir) else {
+                    continue;
+                };
+                if !profiles.iter().any(|p| !p.match_apps.is_empty()) {
+                    continue;
+                }
+                let Some(win) = provider.active_window() else {
+                    continue;
+                };
+
+                let mut guard = shared.lock().await;
+                let devices = guard.list_devices();
+                let mut matched_for_any = None;
+                for dev in &devices {
+                    let vid = u16::from_str_radix(dev.vendor_id.trim_start_matches("0x"), 16).ok();
+                    let pid = u16::from_str_radix(dev.product_id.trim_start_matches("0x"), 16).ok();
+                    if let Some(matched) = tracker.evaluate(&win, &profiles, vid, pid) {
+                        matched_for_any = Some((dev.device_key.clone(), matched.clone()));
+                        break;
+                    }
+                }
+                if let Some((device_key, profile)) = matched_for_any {
+                    match guard.apply_software_profile(&device_key, &profile, false) {
+                        Ok(_) => info!(
+                            device = %device_key,
+                            profile = %profile.name,
+                            app_id = %win.app_id,
+                            "auto-switched software profile for active window"
+                        ),
+                        Err(err) => warn!(
+                            device = %device_key,
+                            profile = %profile.name,
+                            %err,
+                            "failed auto-switching software profile"
+                        ),
+                    }
+                }
+            }
+        }
+    });
+
     wait_for_shutdown_signal().await;
     info!("shutdown signal received; stopping squeakd cleanly");
 
@@ -138,6 +192,7 @@ async fn run_daemon(cli: DaemonCli) -> Result<(), DaemonError> {
         handle.abort();
     }
     hotplug_task.abort();
+    window_task.abort();
     if let Some(handle) = hotplug_handle {
         let _ = handle.await;
     }

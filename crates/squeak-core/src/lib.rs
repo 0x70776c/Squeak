@@ -8,6 +8,7 @@ pub mod dump;
 pub mod ops;
 pub mod profile_backup;
 pub mod settings;
+pub mod software_profile;
 
 pub use device_data::{
     BUILTIN_G502_HERO_SVG, BUILTIN_GENERIC_MOUSE_SVG, ButtonDefinition, DeviceDataError,
@@ -34,4 +35,9 @@ pub use settings::{
     PlannedWireFrame, ProfileBackupReport, ProfileRestoreReport, ProfileSetActiveReport,
     ProfilesListReport, ReportRateConfigReport, ReportRateWriteReport, ScrollConfigReport,
     SensorDpiReport,
+};
+pub use software_profile::{
+    SOFTWARE_PROFILE_SCHEMA_V1, SoftwareLedZone, SoftwareProfile, SoftwareProfileError,
+    delete_profile_from_dir, export_profile, import_profile, load_profiles_from_dir,
+    match_profile_for_window, sanitize_profile_slug, save_profile_to_dir, xdg_profiles_dir,
 };

@@ -134,8 +134,13 @@ Status legend:
 > - **Next:** M8 (Software Profiles & Desktop Integration).
 
 ## M8 – Software Profiles & Desktop Integration
-- [ ] XDG TOML software profiles (`$XDG_CONFIG_HOME/squeak`), import/export
-- [ ] Active-window / per-app profile switching behind trait (GNOME/KDE/Hyprland backends + working impl)
+- [x] XDG TOML software profiles (`$XDG_CONFIG_HOME/squeak`), import/export
+- [x] Active-window / per-app profile switching behind trait (GNOME/KDE/Hyprland backends + working impl)
+
+> **M8 Summary**
+> - **Done:** Added `squeak_core::software_profile` (`SoftwareProfile`, `SoftwareLedZone`, `$XDG_CONFIG_HOME/squeak/profiles/*.toml` load/save/delete/import/export, window matching), `squeakd::window_watcher` (`ActiveWindowProvider` trait with `HyprlandWindowProvider`, `KdeWindowProvider`, `GnomeWindowProvider`, `AutoWindowProvider`, `WindowMatchTracker`), `DeviceRegistry::apply_software_profile`, D-Bus methods (`ListSoftwareProfiles`, `SaveSoftwareProfile`, `DeleteSoftwareProfile`, `ApplySoftwareProfile`), background active-window watcher loop in `squeakd`, and `squeak sw-profiles` (`list`, `save`, `apply`, `export`, `import`, `delete`) in `squeak-cli`.
+> - **Tested:** Workspace unit tests for XDG TOML roundtrips, window-matching/deduplication, Hyprland/KDE/GNOME output parsing, and CLI `sw-profiles` roundtrips; full quality gate clean.
+> - **Next:** M9 (Packaging & Release).
 
 ## M9 – Packaging & Release
 - [ ] Flatpak manifest (`org.gnome.Platform`, `--device=all`, `rust-stable` ext)

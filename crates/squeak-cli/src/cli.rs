@@ -57,6 +57,10 @@ pub enum Command {
     /// Manage onboard profile memory sectors (`0x8100`): list, backup, restore, set-active.
     Profiles(ProfilesArgs),
 
+    /// Manage XDG TOML software profiles (`$XDG_CONFIG_HOME/squeak/profiles/*.toml`).
+    #[command(name = "sw-profiles")]
+    SwProfiles(SwProfilesArgs),
+
     /// Dump the complete runtime feature table for a device (without serial numbers).
     #[command(name = "dump-device")]
     DumpDevice(TargetArgs),
@@ -383,6 +387,131 @@ pub struct ProfilesSetActiveArgs {
     /// Target device selection flags.
     #[command(flatten)]
     pub target: TargetArgs,
+}
+
+/// Arguments for `squeak sw-profiles`.
+#[derive(Debug, Args)]
+pub struct SwProfilesArgs {
+    /// Action to perform on XDG TOML software profiles.
+    #[command(subcommand)]
+    pub action: SwProfilesCommand,
+}
+
+/// Subcommands for `squeak sw-profiles`.
+#[derive(Debug, Subcommand)]
+pub enum SwProfilesCommand {
+    /// List all saved XDG TOML software profiles.
+    List,
+
+    /// Create or update an XDG TOML software profile.
+    Save(SwProfilesSaveArgs),
+
+    /// Apply a saved software profile to a connected device (dry-run by default; pass `--apply`).
+    Apply(SwProfilesApplyArgs),
+
+    /// Export a software profile TOML file to an arbitrary path.
+    Export(SwProfilesExportArgs),
+
+    /// Import a software profile TOML file into `$XDG_CONFIG_HOME/squeak/profiles/`.
+    Import(SwProfilesImportArgs),
+
+    /// Delete a saved software profile by name.
+    Delete(SwProfilesDeleteArgs),
+}
+
+/// Arguments for `squeak sw-profiles save`.
+#[derive(Debug, Args)]
+pub struct SwProfilesSaveArgs {
+    /// Profile name (also determines `<slug>.toml` filename).
+    pub name: String,
+
+    /// Target DPI for sensor 0.
+    #[arg(long)]
+    pub dpi: Option<u16>,
+
+    /// Target polling report rate in Hz (e.g. `1000`).
+    #[arg(long)]
+    pub report_rate: Option<u16>,
+
+    /// Target operating mode (`host` or `onboard`).
+    #[arg(long)]
+    pub onboard_mode: Option<String>,
+
+    /// Optional vendor ID hex filter (e.g. `046d`).
+    #[arg(long)]
+    pub vendor_id: Option<String>,
+
+    /// Optional product ID hex filter (e.g. `c08b`).
+    #[arg(long)]
+    pub product_id: Option<String>,
+
+    /// Case-insensitive app/window-class/title pattern for auto-switching (repeatable).
+    #[arg(long = "match-app")]
+    pub match_apps: Vec<String>,
+
+    /// Optional LED zone index (e.g. `0` or `1`) when specifying `--led-effect`.
+    #[arg(long, default_value_t = 1)]
+    pub led_zone: u8,
+
+    /// Optional LED effect (`off`, `static`, `breathing`, `cycle`).
+    #[arg(long)]
+    pub led_effect: Option<String>,
+
+    /// Optional `#RRGGBB` hex color for `--led-effect`.
+    #[arg(long)]
+    pub led_color: Option<String>,
+
+    /// Optional brightness percentage (`1..=100`) for `--led-effect`.
+    #[arg(long)]
+    pub led_brightness: Option<u8>,
+
+    /// Optional animation period in ms (`500..=20000`) for `--led-effect`.
+    #[arg(long)]
+    pub led_period: Option<u16>,
+}
+
+/// Arguments for `squeak sw-profiles apply`.
+#[derive(Debug, Args)]
+pub struct SwProfilesApplyArgs {
+    /// Name of the saved software profile to apply.
+    pub name: String,
+
+    /// Actually write settings to hardware.
+    /// When omitted, validates and prints a `--dry-run` plan only.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+
+    /// Explicitly preview without modifying hardware (default).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+/// Arguments for `squeak sw-profiles export`.
+#[derive(Debug, Args)]
+pub struct SwProfilesExportArgs {
+    /// Name of the saved software profile to export.
+    pub name: String,
+
+    /// Destination file path.
+    pub out: PathBuf,
+}
+
+/// Arguments for `squeak sw-profiles import`.
+#[derive(Debug, Args)]
+pub struct SwProfilesImportArgs {
+    /// Source `.toml` software profile file path.
+    pub file: PathBuf,
+}
+
+/// Arguments for `squeak sw-profiles delete`.
+#[derive(Debug, Args)]
+pub struct SwProfilesDeleteArgs {
+    /// Name of the saved software profile to delete.
+    pub name: String,
 }
 
 #[cfg(test)]
