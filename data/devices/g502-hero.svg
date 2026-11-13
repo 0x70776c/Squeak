@@ -1,68 +1,110 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 520" width="320" height="520">
   <title>G502 HERO</title>
-  <!-- Mouse Body Shell -->
+
+  <!-- Cable & Strain Relief -->
+  <g id="cable" fill="none" stroke="#e5e9f0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="172" y1="14" x2="172" y2="54" />
+    <line x1="182" y1="14" x2="182" y2="54" />
+    <path d="M 167 54 L 187 54 L 187 96 L 167 96 Z" fill="#101318" />
+    <line x1="168" y1="62" x2="174" y2="62" />
+    <line x1="180" y1="62" x2="186" y2="62" />
+    <line x1="168" y1="70" x2="174" y2="70" />
+    <line x1="180" y1="70" x2="186" y2="70" />
+    <line x1="168" y1="78" x2="174" y2="78" />
+    <line x1="180" y1="78" x2="186" y2="78" />
+    <line x1="168" y1="86" x2="174" y2="86" />
+    <line x1="180" y1="86" x2="186" y2="86" />
+  </g>
+
+  <!-- Outer Mouse Silhouette & Thumb Wing -->
   <path id="body-shell"
-        d="M 160 28 C 218 28, 256 64, 260 132 L 264 252 C 268 358, 246 476, 168 486 C 102 494, 72 418, 66 336 C 58 296, 34 278, 34 236 C 34 198, 60 184, 62 128 C 66 64, 102 28, 160 28 Z"
-        fill="#242933" stroke="#5c667a" stroke-width="3" />
-  <!-- Thumb Rest Wing -->
+        d="M 192 68 C 228 84, 258 106, 268 148 L 280 264 C 288 360, 276 462, 198 504 L 188 504 C 184 480, 184 446, 178 424 L 166 424 C 168 450, 168 480, 164 504 L 154 504 C 110 486, 86 436, 72 396 C 48 378, 32 356, 33 326 C 34 294, 54 270, 62 246 L 64 196 L 78 134 C 84 106, 114 96, 160 96 L 160 88 L 192 88 Z"
+        fill="#11141a" stroke="#e5e9f0" stroke-width="2" stroke-linejoin="round" />
+
+  <!-- Thumb Wing Inner Contour -->
   <path id="thumb-wing"
-        d="M 64 202 C 42 208, 32 224, 34 246 C 36 272, 54 288, 68 310 L 72 206 Z"
-        fill="#1b1f27" stroke="#4a5366" stroke-width="2" />
+        d="M 62 248 C 44 278, 38 310, 44 342 C 52 368, 86 384, 118 408 C 148 430, 168 446, 174 502"
+        fill="none" stroke="#9aa6bd" stroke-width="1.6" stroke-linejoin="round" />
+
+  <!-- Lower Palm Seam Lines -->
+  <path id="palm-seams"
+        d="M 74 332 L 166 292 M 192 278 L 270 300 M 252 384 C 266 420, 264 452, 240 478 M 82 318 C 102 366, 146 390, 182 414 C 188 442, 188 474, 188 503"
+        fill="none" stroke="#9aa6bd" stroke-width="1.5" stroke-linejoin="round" />
 
   <!-- Left Click (Primary) -->
   <path id="btn-left" class="squeak-btn"
-        d="M 88 52 C 110 38, 136 34, 154 34 L 154 196 L 76 196 C 72 136, 74 80, 88 52 Z"
-        fill="#2f3644" stroke="#6d788f" stroke-width="2" />
+        d="M 96 106 C 116 98, 138 96, 158 96 L 162 290 L 94 316 C 84 252, 82 168, 96 106 Z"
+        fill="#161a22" stroke="#e5e9f0" stroke-width="1.8" stroke-linejoin="round" />
 
   <!-- Right Click (Secondary) -->
   <path id="btn-right" class="squeak-btn"
-        d="M 166 34 C 188 34, 214 38, 234 52 C 248 80, 252 136, 248 196 L 166 196 Z"
-        fill="#2f3644" stroke="#6d788f" stroke-width="2" />
+        d="M 192 70 C 224 84, 248 106, 258 144 C 268 192, 268 248, 266 296 L 194 278 L 192 96 Z"
+        fill="#161a22" stroke="#e5e9f0" stroke-width="1.8" stroke-linejoin="round" />
+
+  <!-- Center Spine Housing -->
+  <path d="M 160 96 L 192 96 L 194 278 L 164 292 Z"
+        fill="#101318" stroke="#9aa6bd" stroke-width="1.5" stroke-linejoin="round" />
 
   <!-- G8 (DPI Up) on outer edge of Left Click -->
   <path id="btn-g8" class="squeak-btn"
-        d="M 66 84 L 82 80 L 80 124 L 64 128 Z"
-        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+        d="M 74 128 L 88 122 L 85 168 L 66 176 Z"
+        fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
 
   <!-- G7 (DPI Down) below G8 -->
   <path id="btn-g7" class="squeak-btn"
-        d="M 64 134 L 80 130 L 78 174 L 62 178 Z"
-        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+        d="M 65 182 L 84 174 L 82 218 L 62 224 Z"
+        fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
 
   <!-- Scroll Wheel Housing -->
-  <rect x="144" y="72" width="32" height="76" rx="10" fill="#161920" stroke="#4f586b" stroke-width="2" />
-  <!-- Middle Click -->
-  <rect id="btn-middle" class="squeak-btn" x="150" y="80" width="20" height="60" rx="6"
-        fill="#444e63" stroke="#8c99b2" stroke-width="1.8" />
+  <rect x="163" y="114" width="30" height="86" rx="9" fill="#0d1015" stroke="#9aa6bd" stroke-width="1.6" />
+  <!-- Middle Click (Grooved Scroll Wheel) -->
+  <rect id="btn-middle" class="squeak-btn" x="168" y="120" width="20" height="74" rx="6"
+        fill="#1f2530" stroke="#e5e9f0" stroke-width="1.8" />
+  <!-- Wheel Grooves -->
+  <g stroke="#d8dee9" stroke-width="1.3" pointer-events="none">
+    <rect x="171" y="128" width="14" height="5" rx="2" fill="none" />
+    <rect x="171" y="138" width="14" height="5" rx="2" fill="none" />
+    <rect x="171" y="148" width="14" height="5" rx="2" fill="none" />
+    <rect x="171" y="158" width="14" height="5" rx="2" fill="none" />
+    <rect x="171" y="168" width="14" height="5" rx="2" fill="none" />
+    <rect x="171" y="178" width="14" height="5" rx="2" fill="none" />
+  </g>
+
   <!-- Scroll Left Tilt -->
   <path id="btn-scroll-left" class="squeak-btn"
-        d="M 134 94 L 146 94 L 146 126 L 134 126 L 128 110 Z"
-        fill="#353d4d" stroke="#7d8aa3" stroke-width="1.5" />
+        d="M 152 140 L 163 140 L 163 174 L 152 174 L 146 157 Z"
+        fill="#1a1f28" stroke="#9aa6bd" stroke-width="1.3" />
   <!-- Scroll Right Tilt -->
   <path id="btn-scroll-right" class="squeak-btn"
-        d="M 174 94 L 186 94 L 192 110 L 186 126 L 174 126 Z"
-        fill="#353d4d" stroke="#7d8aa3" stroke-width="1.5" />
+        d="M 193 140 L 204 140 L 210 157 L 204 174 L 193 174 Z"
+        fill="#1a1f28" stroke="#9aa6bd" stroke-width="1.3" />
+
+  <!-- Scroll Mode Latch (Decorative) -->
+  <rect x="167" y="210" width="22" height="22" rx="3" fill="#181d26" stroke="#e5e9f0" stroke-width="1.5" />
 
   <!-- G9 (Profile Cycle) behind Scroll Wheel -->
-  <rect id="btn-g9" class="squeak-btn" x="148" y="182" width="24" height="30" rx="5"
-        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+  <path id="btn-g9" class="squeak-btn"
+        d="M 167 240 L 189 240 L 190 270 L 168 276 Z"
+        fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
 
   <!-- Thumb Cluster: Forward (G5), Back (G4), Sniper (DPI Shift) -->
   <path id="btn-forward" class="squeak-btn"
-        d="M 52 190 L 68 184 L 72 222 L 54 226 Z"
-        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+        d="M 60 230 L 72 226 L 75 264 L 62 268 Z"
+        fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
   <path id="btn-back" class="squeak-btn"
-        d="M 54 232 L 72 228 L 74 268 L 56 272 Z"
-        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+        d="M 62 272 L 75 268 L 78 308 L 64 312 Z"
+        fill="#1d222c" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
   <path id="btn-dpi-shift" class="squeak-btn"
-        d="M 38 228 L 50 228 L 52 264 L 38 260 Z"
-        fill="#4a556b" stroke="#99a8c4" stroke-width="1.8" />
+        d="M 44 274 L 58 270 L 60 314 L 44 312 Z"
+        fill="#222834" stroke="#e5e9f0" stroke-width="1.6" stroke-linejoin="round" />
 
-  <!-- Decorative LED Zones -->
-  <g id="led-dpi" fill="#3584e4">
-    <rect x="82" y="218" width="14" height="5" rx="2" />
-    <rect x="82" y="227" width="14" height="5" rx="2" />
-    <rect x="82" y="236" width="14" height="5" rx="2" />
+  <!-- Decorative DPI LEDs (3 diagonal bars) -->
+  <g id="led-dpi" fill="#3584e4" stroke="#9aa6bd" stroke-width="0.6">
+    <rect x="81" y="254" width="12" height="4" rx="1.5" transform="rotate(-18 87 256)" />
+    <rect x="83" y="272" width="12" height="4" rx="1.5" transform="rotate(-18 89 274)" />
+    <rect x="85" y="290" width="12" height="4" rx="1.5" transform="rotate(-18 91 292)" />
   </g>
-  <circle id="led-logo" cx="164" cy="364" r="18" fill="none" stroke="#3584e4" stroke-width="4" />
+
+  <!-- Neutral Logo LED Zone -->
+  <circle id="led-logo" cx="152" cy="348" r="16" fill="none" stroke="#3584e4" stroke-width="3" />
 </svg>

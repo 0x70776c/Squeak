@@ -49,17 +49,17 @@ pub fn render_svg_with_highlight(svg_name: Option<&str>, selected_svg_id: Option
 pub fn button_hit_regions(svg_name: Option<&str>) -> Vec<ButtonHitRegion> {
     match svg_name {
         Some("g502-hero.svg") => vec![
-            region("btn-left", 74.0, 34.0, 154.0, 196.0),
-            region("btn-right", 166.0, 34.0, 250.0, 196.0),
-            region("btn-g8", 64.0, 80.0, 82.0, 128.0),
-            region("btn-g7", 62.0, 130.0, 80.0, 178.0),
-            region("btn-middle", 148.0, 80.0, 172.0, 140.0),
-            region("btn-scroll-left", 128.0, 94.0, 146.0, 126.0),
-            region("btn-scroll-right", 174.0, 94.0, 192.0, 126.0),
-            region("btn-g9", 148.0, 182.0, 172.0, 212.0),
-            region("btn-forward", 52.0, 184.0, 72.0, 226.0),
-            region("btn-back", 54.0, 228.0, 74.0, 272.0),
-            region("btn-dpi-shift", 38.0, 228.0, 52.0, 264.0),
+            region("btn-left", 84.0, 96.0, 162.0, 316.0),
+            region("btn-right", 192.0, 70.0, 268.0, 296.0),
+            region("btn-g8", 66.0, 122.0, 88.0, 176.0),
+            region("btn-g7", 62.0, 174.0, 84.0, 224.0),
+            region("btn-middle", 166.0, 120.0, 190.0, 194.0),
+            region("btn-scroll-left", 146.0, 140.0, 163.0, 174.0),
+            region("btn-scroll-right", 193.0, 140.0, 210.0, 174.0),
+            region("btn-g9", 167.0, 240.0, 190.0, 276.0),
+            region("btn-forward", 60.0, 226.0, 75.0, 268.0),
+            region("btn-back", 62.0, 268.0, 78.0, 312.0),
+            region("btn-dpi-shift", 44.0, 270.0, 60.0, 314.0),
         ],
         _ => vec![
             region("btn-left", 68.0, 42.0, 152.0, 204.0),
@@ -107,11 +107,11 @@ mod tests {
     #[test]
     fn hit_tests_g502_buttons_and_generic_fallback() {
         assert_eq!(
-            hit_test_button(Some("g502-hero.svg"), 110.0, 100.0).as_deref(),
+            hit_test_button(Some("g502-hero.svg"), 120.0, 180.0).as_deref(),
             Some("btn-left")
         );
         assert_eq!(
-            hit_test_button(Some("g502-hero.svg"), 45.0, 245.0).as_deref(),
+            hit_test_button(Some("g502-hero.svg"), 52.0, 290.0).as_deref(),
             Some("btn-dpi-shift")
         );
         assert_eq!(
