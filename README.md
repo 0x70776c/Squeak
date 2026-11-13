@@ -2,7 +2,7 @@
 
 Open-source Linux control panel and daemon for HID++ 2.0 mice and peripherals, built in Rust with a GTK4/libadwaita interface.
 
-> **Status:** Early active development (see [docs/PROGRESS.md](docs/PROGRESS.md)). Hardware verification items are tracked under `[NEEDS-HW]`.
+> **Status:** **v0.1.0** — Core milestones **M0–M9** are complete (`hidpp`, `squeak-core`, `squeakd`, `squeak-cli`, `squeak-gui`, XDG software profiles, and packaging). See [CHANGELOG.md](CHANGELOG.md), [docs/device-support.md](docs/device-support.md), and [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Architecture
 
@@ -26,15 +26,24 @@ Squeak uses a five-crate Cargo workspace separating protocol handling, device da
 Requires Rust **1.89+** (Edition 2024). See [docs/dev-setup.md](docs/dev-setup.md) for distro package prerequisites.
 
 ```bash
+# Build and run the full workspace test suite
 cargo test --workspace --all-features
-cargo run -p squeak-cli -- --help
+
+# Install udev rules for unprivileged hidraw access (preview first, then apply)
 cargo run -p squeak-cli -- setup-udev --dry-run
+cargo run -p squeak-cli -- setup-udev
+
+# Start the background daemon and launch the GTK4/libadwaita GUI
+cargo run -p squeakd &
+cargo run -p squeak-gui
+
+# Or use the CLI directly
 cargo run -p squeak-cli -- list
-cargo run -p squeak-cli -- info
-cargo run -p squeak-cli -- dump-device --json
+cargo run -p squeak-cli -- status
+cargo run -p squeak-cli -- sw-profiles list
 ```
 
-See [docs/hw-tests-m2.md](docs/hw-tests-m2.md) for `[NEEDS-HW]` hardware verification steps and expected output on physical devices.
+See [docs/device-support.md](docs/device-support.md) for supported hardware and [docs/contributing-a-device.md](docs/contributing-a-device.md) to add new device definitions.
 
 ## License
 
