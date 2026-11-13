@@ -54,11 +54,31 @@ impl IFeatureSet {
     /// Handles both `Short` (`0x10`, 3 parameter bytes, v0 where `version` defaults to `0`)
     /// and `Long` (`0x11`, >= 4 parameter bytes, v1+ where `params[3]` carries `version`).
     ///
+    /// Note: on `IFeatureSet` v0 devices replying with `Long` frames, byte `params[3]` is
+    /// undefined and may hold stale buffer bytes; prefer [`Self::parse_get_feature_id_response_versioned`]
+    /// with the `IFeatureSet` version discovered via `IRoot::getFeature`.
+    ///
     /// # Errors
     ///
     /// Returns [`ProtocolError::ResponseTruncated`] if fewer than 3 parameter bytes are present.
     pub fn parse_get_feature_id_response(
         index: FeatureIndex,
+        params: &[u8],
+    ) -> Result<FeatureEntry, ProtocolError> {
+        Self::parse_get_feature_id_response_versioned(index, 1, params)
+    }
+
+    /// Parses `IFeatureSet::getFeatureID` response parameters knowing `feature_set_version`.
+    ///
+    /// When `feature_set_version == 0`, the returned feature revision is forced to `0` even if the
+    /// response arrived in a 20-byte `Long` report with non-zero trailing buffer bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError::ResponseTruncated`] if fewer than 3 parameter bytes are present.
+    pub fn parse_get_feature_id_response_versioned(
+        index: FeatureIndex,
+        feature_set_version: u8,
         params: &[u8],
     ) -> Result<FeatureEntry, ProtocolError> {
         if params.len() < 3 {
@@ -69,7 +89,11 @@ impl IFeatureSet {
         }
         let id = FeatureId(u16::from_be_bytes([params[0], params[1]]));
         let flags = FeatureFlags::from_raw(params[2]);
-        let version = params.get(3).copied().unwrap_or(0);
+        let version = if feature_set_version == 0 {
+            0
+        } else {
+            params.get(3).copied().unwrap_or(0)
+        };
         Ok(FeatureEntry {
             index,
             id,
@@ -97,7 +121,7 @@ impl IFeatureSet {
         Ok(Self::parse_get_count_response(reply.params())?)
     }
 
-    /// Queries metadata for the feature at `query_index` (`1..=count`).
+    /// Queries metadata for the feature at `query_index` (`1..=count`) assuming `IFeatureSet` v1+.
     ///
     /// # Errors
     ///
@@ -108,6 +132,22 @@ impl IFeatureSet {
         feature_set_index: FeatureIndex,
         query_index: u8,
     ) -> Result<FeatureEntry, HidppError> {
+        Self::get_feature_id_versioned(session, device_index, feature_set_index, 1, query_index)
+    }
+
+    /// Queries metadata for the feature at `query_index` (`1..=count`), masking `version` to `0`
+    /// when `feature_set_version == 0`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HidppError`] on transport, protocol, or device error responses.
+    pub fn get_feature_id_versioned<T: HidTransport>(
+        session: &mut HidppSession<T>,
+        device_index: DeviceIndex,
+        feature_set_index: FeatureIndex,
+        feature_set_version: u8,
+        query_index: u8,
+    ) -> Result<FeatureEntry, HidppError> {
         let params = Self::encode_get_feature_id_params(query_index);
         let reply = session.request(
             device_index,
@@ -115,8 +155,9 @@ impl IFeatureSet {
             FunctionId::new(FN_GET_FEATURE_ID)?,
             &params,
         )?;
-        Ok(Self::parse_get_feature_id_response(
+        Ok(Self::parse_get_feature_id_response_versioned(
             FeatureIndex(query_index),
+            feature_set_version,
             reply.params(),
         )?)
     }
@@ -167,6 +208,25 @@ mod tests {
                 actual: 2
             })
         ));
+    }
+
+    #[test]
+    fn versioned_parser_masks_v0_long_tail_byte() {
+        let v0_entry = IFeatureSet::parse_get_feature_id_response_versioned(
+            FeatureIndex(2),
+            0,
+            &[0x00, 0x05, 0x00, 0x7F],
+        )
+        .unwrap();
+        assert_eq!(v0_entry.version, 0);
+
+        let v1_entry = IFeatureSet::parse_get_feature_id_response_versioned(
+            FeatureIndex(2),
+            1,
+            &[0x00, 0x05, 0x00, 0x7F],
+        )
+        .unwrap();
+        assert_eq!(v1_entry.version, 0x7F);
     }
 
     proptest! {

@@ -65,6 +65,11 @@ impl IRoot {
         if idx == 0 {
             return Ok(None);
         }
+        if idx == FeatureIndex::ERROR.0 {
+            return Err(ProtocolError::UnexpectedResponse {
+                detail: "IRoot::getFeature returned reserved error index 0xFF".to_owned(),
+            });
+        }
 
         Ok(Some(ResolvedFeature {
             index: FeatureIndex(idx),
@@ -235,6 +240,10 @@ mod tests {
                 expected: 2,
                 actual: 1
             })
+        ));
+        assert!(matches!(
+            IRoot::parse_get_feature_response(&[0xFF, 0x00, 0x00]),
+            Err(ProtocolError::UnexpectedResponse { .. })
         ));
     }
 

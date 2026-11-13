@@ -5,9 +5,13 @@ use std::time::{Duration, Instant};
 use tracing::{debug, trace, warn};
 
 use crate::error::{
-    Hidpp10Error, Hidpp20Error, Hidpp20ErrorCode, HidppError, ProtocolError, TransportError,
+    Hidpp10Error, Hidpp10ErrorCode, Hidpp20Error, Hidpp20ErrorCode, HidppError, ProtocolError,
+    TransportError,
 };
-use crate::frame::{DeviceIndex, FeatureIndex, FunctionId, HidppFrame, SwId, pack_func_sw};
+use crate::frame::{
+    DeviceIndex, FeatureIndex, FunctionId, HidppFrame, ReportId, SwId, pack_func_sw,
+};
+use crate::hidraw::deadline_after;
 use crate::transport::{HidDeviceInfo, HidTransport};
 
 const MAX_BUSY_BACKOFF: Duration = Duration::from_millis(500);
@@ -19,9 +23,9 @@ pub struct SessionConfig {
     pub sw_id: SwId,
     /// Total deadline to wait for a single matching response (excluding retries).
     pub response_timeout: Duration,
-    /// Maximum retries after receiving [`Hidpp20ErrorCode::Busy`] (`0x08`).
+    /// Maximum retries after receiving [`Hidpp20ErrorCode::Busy`] (`0x08`) or HID++ 1.0 `Busy` (`0x07`).
     pub max_busy_retries: u32,
-    /// Base delay for exponential backoff after [`Hidpp20ErrorCode::Busy`].
+    /// Base delay for exponential backoff after busy responses.
     pub busy_initial_backoff: Duration,
 }
 
@@ -93,14 +97,15 @@ impl<T: HidTransport> HidppSession<T> {
     /// - Automatically chooses the smallest supported report ID (`0x10`, `0x11`, or `0x12`)
     ///   for `params` according to [`HidDeviceInfo::supported_reports`].
     /// - Ignores device notifications (`sw_id == 0`) and frames targeting other devices or `sw_id`s.
-    /// - Translates HID++ 2.0 `0xFF` and HID++ 1.0 `0x8F` error frames into typed errors.
+    /// - Translates HID++ 2.0 `0xFF` and HID++ 1.0 `0x8F` error frames into typed errors,
+    ///   distinguishing offline/unpaired receiver slots from legacy HID++ 1.0 devices.
     /// - Retries up to [`SessionConfig::max_busy_retries`] times with bounded exponential backoff
-    ///   when the device responds with [`Hidpp20ErrorCode::Busy`].
+    ///   when the device or receiver responds with `Busy`.
     ///
     /// # Errors
     ///
-    /// Returns [`HidppError`] on transport failures, timeouts, malformed frames, legacy
-    /// HID++ 1.0 responses, exhausted `Busy` retries, or device protocol errors.
+    /// Returns [`HidppError`] on transport failures, timeouts, malformed frames, offline
+    /// receiver slots, legacy HID++ 1.0 responses, exhausted `Busy` retries, or device protocol errors.
     pub fn request(
         &mut self,
         device_index: DeviceIndex,
@@ -124,7 +129,7 @@ impl<T: HidTransport> HidppSession<T> {
         'attempt: for attempt in 0..total_attempts {
             self.transport.write_frame(&req)?;
 
-            let deadline = Instant::now() + self.config.response_timeout;
+            let deadline = deadline_after(Instant::now(), self.config.response_timeout);
             let mut first_read = true;
 
             loop {
@@ -151,32 +156,15 @@ impl<T: HidTransport> HidppSession<T> {
                         && err20.sw_id == self.config.sw_id
                     {
                         if err20.code == Hidpp20ErrorCode::Busy {
-                            if attempt + 1 < total_attempts {
-                                let shift = attempt.min(6);
-                                let backoff = self
-                                    .config
-                                    .busy_initial_backoff
-                                    .saturating_mul(1u32 << shift)
-                                    .min(MAX_BUSY_BACKOFF);
-                                debug!(
-                                    attempt = attempt + 1,
-                                    max = total_attempts,
-                                    ?backoff,
-                                    feature = %feature_index,
-                                    func = %function_id,
-                                    "device busy; backing off before retry"
-                                );
-                                if !backoff.is_zero() {
-                                    std::thread::sleep(backoff);
-                                }
-                                continue 'attempt;
-                            }
-                            return Err(ProtocolError::BusyRetriesExhausted {
+                            busy_retry_or_exhausted(
+                                self.config,
+                                attempt,
+                                total_attempts,
                                 feature_index,
                                 function_id,
-                                attempts: total_attempts,
-                            }
-                            .into());
+                                "HID++ 2.0 Busy (0x08)",
+                            )?;
+                            continue 'attempt;
                         }
                         return Err(HidppError::from(err20));
                     }
@@ -184,13 +172,47 @@ impl<T: HidTransport> HidppSession<T> {
                     continue;
                 }
 
-                if let Some(err10) = Hidpp10Error::from_frame(&frame) {
+                if !feature_index.is_hidpp10_error()
+                    && frame.report_id() == ReportId::Short
+                    && let Some(err10) = Hidpp10Error::from_frame(&frame)
+                {
                     if err10.sub_id == feature_index.0 && err10.address == expected_func_sw {
-                        warn!(?err10, "device answered with legacy HID++ 1.0 ERROR_MSG");
-                        return Err(ProtocolError::LegacyDeviceNotSupported {
-                            error_code: err10.code,
+                        match err10.code {
+                            Hidpp10ErrorCode::Busy => {
+                                busy_retry_or_exhausted(
+                                    self.config,
+                                    attempt,
+                                    total_attempts,
+                                    feature_index,
+                                    function_id,
+                                    "HID++ 1.0 Busy (0x07)",
+                                )?;
+                                continue 'attempt;
+                            }
+                            Hidpp10ErrorCode::UnknownDevice
+                            | Hidpp10ErrorCode::ResourceError
+                            | Hidpp10ErrorCode::ConnectFail
+                                if (1..=6).contains(&device_index.as_byte()) =>
+                            {
+                                debug!(
+                                    ?err10,
+                                    %device_index,
+                                    "receiver reports wireless device slot offline or unavailable"
+                                );
+                                return Err(ProtocolError::ReceiverDeviceOffline {
+                                    device_index,
+                                    error_code: err10.code,
+                                }
+                                .into());
+                            }
+                            other => {
+                                warn!(?err10, "device answered with legacy HID++ 1.0 ERROR_MSG");
+                                return Err(ProtocolError::LegacyDeviceNotSupported {
+                                    error_code: other,
+                                }
+                                .into());
+                            }
                         }
-                        .into());
                     }
                     trace!(?err10, "ignoring unrelated HID++ 1.0 error frame");
                     continue;
@@ -228,11 +250,46 @@ impl<T: HidTransport> HidppSession<T> {
     }
 }
 
+fn busy_retry_or_exhausted(
+    config: SessionConfig,
+    attempt: u32,
+    total_attempts: u32,
+    feature_index: FeatureIndex,
+    function_id: FunctionId,
+    reason: &'static str,
+) -> Result<(), HidppError> {
+    if attempt + 1 < total_attempts {
+        let shift = attempt.min(6);
+        let backoff = config
+            .busy_initial_backoff
+            .saturating_mul(1u32 << shift)
+            .min(MAX_BUSY_BACKOFF);
+        debug!(
+            attempt = attempt + 1,
+            max = total_attempts,
+            ?backoff,
+            feature = %feature_index,
+            func = %function_id,
+            reason,
+            "device busy; backing off before retry"
+        );
+        if !backoff.is_zero() {
+            std::thread::sleep(backoff);
+        }
+        return Ok(());
+    }
+    Err(ProtocolError::BusyRetriesExhausted {
+        feature_index,
+        function_id,
+        attempts: total_attempts,
+    }
+    .into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::Hidpp10ErrorCode;
-    use crate::frame::{ReportId, SupportedReports};
+    use crate::frame::SupportedReports;
     use crate::transport::MockTransport;
 
     fn test_config() -> SessionConfig {
@@ -500,5 +557,100 @@ mod tests {
             session.transport().written_frames()[0].report_id(),
             ReportId::Long
         );
+    }
+
+    #[test]
+    fn maps_receiver_0x8f_offline_errors_for_slots_1_to_6() {
+        let slot1 = DeviceIndex::receiver(1).unwrap();
+        for (raw_code, expected_code) in [
+            (0x04u8, Hidpp10ErrorCode::ConnectFail),
+            (0x08u8, Hidpp10ErrorCode::UnknownDevice),
+            (0x09u8, Hidpp10ErrorCode::ResourceError),
+        ] {
+            let info = HidDeviceInfo::mock(0x046D, 0xC548, "Bolt Receiver");
+            let mut mock = MockTransport::new(info);
+            mock.push_frame(
+                HidppFrame::decode(&[0x10, slot1.as_byte(), 0x8F, 0x00, 0x1A, raw_code, 0x00])
+                    .unwrap(),
+            );
+            let mut session = HidppSession::with_config(mock, test_config());
+            let err = session
+                .request(slot1, FeatureIndex::IROOT, fn_id(1), &[0, 0, 0x42])
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                HidppError::Protocol(ProtocolError::ReceiverDeviceOffline {
+                    device_index,
+                    error_code,
+                }) if device_index == slot1 && error_code == expected_code
+            ));
+        }
+    }
+
+    #[test]
+    fn retries_on_hidpp10_busy_0x8f_and_succeeds() {
+        let slot2 = DeviceIndex::receiver(2).unwrap();
+        let info = HidDeviceInfo::mock(0x046D, 0xC52B, "Unifying Receiver");
+        let mut mock = MockTransport::new(info);
+
+        mock.push_frame(
+            HidppFrame::decode(&[0x10, slot2.as_byte(), 0x8F, 0x00, 0x1A, 0x07, 0x00]).unwrap(),
+        );
+        let reply = HidppFrame::new(
+            ReportId::Short,
+            slot2,
+            FeatureIndex::IROOT,
+            fn_id(1),
+            SwId::DEFAULT_REQUEST,
+            &[0x04, 0x05, 0x42],
+        )
+        .unwrap();
+        mock.push_frame(reply);
+
+        let mut session = HidppSession::with_config(mock, test_config());
+        let got = session
+            .request(slot2, FeatureIndex::IROOT, fn_id(1), &[0, 0, 0x42])
+            .unwrap();
+        assert_eq!(got, reply);
+        assert_eq!(session.transport().written_frames().len(), 2);
+    }
+
+    #[test]
+    fn allows_real_hidpp20_feature_assigned_to_index_0x8f() {
+        let info = HidDeviceInfo::mock(0x046D, 0xC08B, "Large Feature Table Mouse");
+        let mut mock = MockTransport::new(info);
+        let idx_8f = FeatureIndex(0x8F);
+
+        let short_reply = HidppFrame::new(
+            ReportId::Short,
+            DeviceIndex::DIRECT,
+            idx_8f,
+            fn_id(0),
+            SwId::DEFAULT_REQUEST,
+            &[0x00, 0x1A, 0x01],
+        )
+        .unwrap();
+        let long_reply = HidppFrame::new(
+            ReportId::Long,
+            DeviceIndex::DIRECT,
+            idx_8f,
+            fn_id(1),
+            SwId::DEFAULT_REQUEST,
+            &[0x00, 0x1A, 0x01, 0x99],
+        )
+        .unwrap();
+        mock.push_frame(short_reply);
+        mock.push_frame(long_reply);
+
+        let mut session = HidppSession::with_config(mock, test_config());
+        let got_short = session
+            .request(DeviceIndex::DIRECT, idx_8f, fn_id(0), &[])
+            .unwrap();
+        assert_eq!(got_short, short_reply);
+
+        let got_long = session
+            .request(DeviceIndex::DIRECT, idx_8f, fn_id(1), &[])
+            .unwrap();
+        assert_eq!(got_long, long_reply);
     }
 }

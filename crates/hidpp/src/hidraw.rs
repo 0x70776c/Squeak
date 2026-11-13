@@ -190,6 +190,25 @@ impl HidrawTransport {
     }
 }
 
+const MAX_IO_TIMEOUT: Duration = Duration::from_secs(86_400);
+
+pub(crate) fn deadline_after(now: Instant, timeout: Duration) -> Instant {
+    now.checked_add(timeout.min(MAX_IO_TIMEOUT)).unwrap_or(now)
+}
+
+fn next_remaining_or_timeout(
+    deadline: Instant,
+    now: Instant,
+    first_iter: &mut bool,
+) -> Result<Duration, TransportError> {
+    let remaining = deadline.saturating_duration_since(now);
+    if !*first_iter && remaining.is_zero() {
+        return Err(TransportError::Timeout);
+    }
+    *first_iter = false;
+    Ok(remaining)
+}
+
 impl HidTransport for HidrawTransport {
     fn device_info(&self) -> &HidDeviceInfo {
         &self.info
@@ -219,8 +238,10 @@ impl HidTransport for HidrawTransport {
             })?;
         let payload = &buf[..len];
 
-        let deadline = Instant::now() + WRITE_POLL_TIMEOUT;
+        let deadline = deadline_after(Instant::now(), WRITE_POLL_TIMEOUT);
+        let mut first_write = true;
         loop {
+            let remaining = next_remaining_or_timeout(deadline, Instant::now(), &mut first_write)?;
             match write(&self.fd, payload) {
                 Ok(written) if written == len => return Ok(()),
                 Ok(written) => {
@@ -234,7 +255,6 @@ impl HidTransport for HidrawTransport {
                 }
                 Err(Errno::INTR) => continue,
                 Err(Errno::AGAIN) => {
-                    let remaining = deadline.saturating_duration_since(Instant::now());
                     if remaining.is_zero() {
                         return Err(TransportError::Timeout);
                     }
@@ -248,10 +268,12 @@ impl HidTransport for HidrawTransport {
     }
 
     fn read_frame(&mut self, timeout: Duration) -> Result<HidppFrame, TransportError> {
-        let deadline = Instant::now() + timeout;
+        let deadline = deadline_after(Instant::now(), timeout);
         let mut buf = [0u8; MAX_REPORT_LEN];
+        let mut first_read = true;
 
         loop {
+            let remaining = next_remaining_or_timeout(deadline, Instant::now(), &mut first_read)?;
             match read(&self.fd, &mut buf) {
                 Ok(0) => return Err(TransportError::Disconnected),
                 Ok(n) => {
@@ -284,7 +306,6 @@ impl HidTransport for HidrawTransport {
                 }
                 Err(Errno::INTR) => continue,
                 Err(Errno::AGAIN) => {
-                    let remaining = deadline.saturating_duration_since(Instant::now());
                     if remaining.is_zero() {
                         return Err(TransportError::Timeout);
                     }
@@ -304,7 +325,7 @@ fn poll_fd(
     timeout: Duration,
     path: &Path,
 ) -> Result<(), TransportError> {
-    let ts = Timespec::try_from(timeout).map_err(|_| TransportError::Io {
+    let ts = Timespec::try_from(timeout.min(MAX_IO_TIMEOUT)).map_err(|_| TransportError::Io {
         context: "converting poll timeout".to_owned(),
         source: io::Error::new(io::ErrorKind::InvalidInput, "timeout overflow"),
     })?;
@@ -469,5 +490,24 @@ mod tests {
         let missing = Path::new("/nonexistent/squeak-sysfs-dir");
         let found = discover_hidpp_devices_in(missing, Path::new("/dev")).unwrap();
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn deadline_helper_clamps_duration_max_and_enforces_expiry_after_first_iter() {
+        let now = Instant::now();
+        let clamped = deadline_after(now, Duration::MAX);
+        assert_eq!(clamped.saturating_duration_since(now), MAX_IO_TIMEOUT);
+
+        let expired_deadline = now;
+        let mut first_iter = true;
+        // First iteration always runs at least one poll/read check.
+        let first = next_remaining_or_timeout(expired_deadline, now, &mut first_iter).unwrap();
+        assert!(first.is_zero());
+        assert!(!first_iter);
+
+        // Subsequent iteration with expired deadline must return Timeout rather than looping forever.
+        let later = now + Duration::from_millis(1);
+        let second = next_remaining_or_timeout(expired_deadline, later, &mut first_iter);
+        assert!(matches!(second, Err(TransportError::Timeout)));
     }
 }

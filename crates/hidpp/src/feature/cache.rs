@@ -91,9 +91,25 @@ impl FeatureTable {
             "discovered HID++ 2.0 feature count"
         );
 
-        entries.reserve(usize::from(count));
-        for idx in 1..=count {
-            let entry = IFeatureSet::get_feature_id(session, device_index, fs_resolved.index, idx)?;
+        let max_idx = if count == FeatureIndex::ERROR.0 {
+            warn!(
+                device_index = %device_index,
+                "clamping invalid IFeatureSet count 255 to 254 to avoid error sentinel 0xFF"
+            );
+            FeatureIndex::ERROR.0 - 1
+        } else {
+            count
+        };
+
+        entries.reserve(usize::from(max_idx));
+        for idx in 1..=max_idx {
+            let entry = IFeatureSet::get_feature_id_versioned(
+                session,
+                device_index,
+                fs_resolved.index,
+                fs_resolved.version,
+                idx,
+            )?;
             entries.push(entry);
         }
 
@@ -422,5 +438,123 @@ mod tests {
                 error_code: Hidpp10ErrorCode::InvalidSubId
             })
         ));
+    }
+
+    #[test]
+    fn ifeature_set_v0_ignores_stale_tail_byte_in_long_replies() {
+        let info = HidDeviceInfo::mock(0x046D, 0x0AAF, "v0 Long-Reply Device");
+        let mut mock = MockTransport::new(info);
+        // ping(0x53) -> 4.2
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Short,
+                DeviceIndex::DIRECT,
+                FeatureIndex::IROOT,
+                fn_id(1),
+                SwId::DEFAULT_REQUEST,
+                &[0x04, 0x02, DEFAULT_PING_DATA],
+            )
+            .unwrap(),
+        );
+        // getFeature(0x0001) -> index 1, flags 0, IFeatureSet VERSION 0
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Short,
+                DeviceIndex::DIRECT,
+                FeatureIndex::IROOT,
+                fn_id(0),
+                SwId::DEFAULT_REQUEST,
+                &[0x01, 0x00, 0x00],
+            )
+            .unwrap(),
+        );
+        // getCount() -> 1
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Short,
+                DeviceIndex::DIRECT,
+                FeatureIndex(1),
+                fn_id(0),
+                SwId::DEFAULT_REQUEST,
+                &[1, 0, 0],
+            )
+            .unwrap(),
+        );
+        // getFeatureID(1) returned in a 20B Long frame where byte 3 has stale buffer garbage 0x54
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Long,
+                DeviceIndex::DIRECT,
+                FeatureIndex(1),
+                fn_id(1),
+                SwId::DEFAULT_REQUEST,
+                &[0x00, 0x05, 0x00, 0x54],
+            )
+            .unwrap(),
+        );
+
+        let mut session = HidppSession::with_config(mock, test_config());
+        let table = FeatureTable::discover(&mut session, DeviceIndex::DIRECT).unwrap();
+        let entry = table.get(FeatureId::DEVICE_NAME).unwrap();
+        assert_eq!(entry.version, 0);
+    }
+
+    #[test]
+    fn clamps_invalid_feature_count_255_before_error_sentinel() {
+        let info = HidDeviceInfo::mock(0x046D, 0xC08B, "Buggy Count Mouse");
+        let mut mock = MockTransport::new(info);
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Short,
+                DeviceIndex::DIRECT,
+                FeatureIndex::IROOT,
+                fn_id(1),
+                SwId::DEFAULT_REQUEST,
+                &[0x04, 0x02, DEFAULT_PING_DATA],
+            )
+            .unwrap(),
+        );
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Short,
+                DeviceIndex::DIRECT,
+                FeatureIndex::IROOT,
+                fn_id(0),
+                SwId::DEFAULT_REQUEST,
+                &[0x01, 0x00, 0x01],
+            )
+            .unwrap(),
+        );
+        // Buggy getCount() returns 255 (0xFF)
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Short,
+                DeviceIndex::DIRECT,
+                FeatureIndex(1),
+                fn_id(0),
+                SwId::DEFAULT_REQUEST,
+                &[0xFF, 0, 0],
+            )
+            .unwrap(),
+        );
+        for _ in 1..=254u8 {
+            mock.push_frame(
+                HidppFrame::new(
+                    ReportId::Long,
+                    DeviceIndex::DIRECT,
+                    FeatureIndex(1),
+                    fn_id(1),
+                    SwId::DEFAULT_REQUEST,
+                    &[0x00, 0x05, 0x00, 0x00],
+                )
+                .unwrap(),
+            );
+        }
+
+        let mut session = HidppSession::with_config(mock, test_config());
+        let table = FeatureTable::discover(&mut session, DeviceIndex::DIRECT).unwrap();
+        // IRoot (0) + 254 features (1..=254), never touching index 0xFF
+        assert_eq!(table.entries().len(), 255);
+        assert!(table.by_index(FeatureIndex::ERROR).is_none());
     }
 }

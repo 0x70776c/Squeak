@@ -7,8 +7,8 @@ use thiserror::Error;
 
 use crate::feature::FeatureId;
 use crate::frame::{
-    FeatureIndex, FunctionId, HIDPP10_ERROR_SUB_ID, HidppFrame, ReportId, SupportedReports, SwId,
-    VERY_LONG_PARAM_LEN,
+    DeviceIndex, FeatureIndex, FunctionId, HIDPP10_ERROR_SUB_ID, HidppFrame, ReportId,
+    SupportedReports, SwId, VERY_LONG_PARAM_LEN,
 };
 
 /// HID++ 2.0 error code reported in error frames (`feature_index == 0xFF`).
@@ -98,13 +98,13 @@ impl fmt::Display for Hidpp20ErrorCode {
 /// Decoded HID++ 2.0 error response (`feature_index == 0xFF`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Hidpp20Error {
-    /// Original feature index echoed by the device (`params[0]`).
+    /// Original feature index echoed by the device (wire byte `[3]`, via [`HidppFrame::raw_func_sw`]).
     pub feature_index: FeatureIndex,
-    /// Original function ID echoed in the upper nibble of `params[1]`.
+    /// Original function ID echoed in the upper nibble of wire byte `[4]` (`params()[0]`).
     pub function_id: FunctionId,
-    /// Original software ID echoed in the lower nibble of `params[1]`.
+    /// Original software ID echoed in the lower nibble of wire byte `[4]` (`params()[0]`).
     pub sw_id: SwId,
-    /// HID++ 2.0 error code (`params[2]`).
+    /// HID++ 2.0 error code (wire byte `[5]`, `params()[1]`).
     pub code: Hidpp20ErrorCode,
 }
 
@@ -145,10 +145,12 @@ impl fmt::Display for Hidpp20Error {
 
 impl std::error::Error for Hidpp20Error {}
 
-/// HID++ 1.0 legacy error codes (`ERROR_MSG`, sub-ID `0x8F`).
+/// HID++ 1.0 error codes (`ERROR_MSG`, sub-ID `0x8F`).
 ///
-/// HID++ 1.0 devices are out of scope for Squeak; encountering these during `IRoot` ping
-/// classifies the target as an unsupported legacy device.
+/// Legacy HID++ 1.0 devices are out of scope for Squeak (`InvalidSubId` etc. during `IRoot`
+/// ping classify the target as an unsupported legacy device). USB/Bolt receivers (`device_index`
+/// `1..=6`) also emit `0x8F` short frames with `UnknownDevice`/`ResourceError`/`ConnectFail`
+/// when a paired HID++ 2.0 wireless device is offline, or `Busy` (`0x07`) when temporarily busy.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Hidpp10ErrorCode {
@@ -385,6 +387,15 @@ pub enum ProtocolError {
     #[error("legacy HID++ 1.0 device is out of scope ({error_code})")]
     LegacyDeviceNotSupported {
         /// Reported HID++ 1.0 error code.
+        error_code: Hidpp10ErrorCode,
+    },
+
+    /// Receiver slot reports target wireless device is offline, asleep, or unpaired (`0x8F`).
+    #[error("receiver device {device_index} is offline or unavailable ({error_code})")]
+    ReceiverDeviceOffline {
+        /// Receiver slot address (`1..=6`).
+        device_index: DeviceIndex,
+        /// Reported HID++ 1.0 error code (`UnknownDevice`, `ResourceError`, or `ConnectFail`).
         error_code: Hidpp10ErrorCode,
     },
 
