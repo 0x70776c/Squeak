@@ -9,8 +9,8 @@ use gtk4::gdk_pixbuf::PixbufLoader;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Adjustment, Align, Box as GtkBox, Button, DropDown, Entry, GestureClick, Label, Orientation,
-    Picture, Scale, StringList,
+    Adjustment, Align, Box as GtkBox, Button, DropDown, Entry, FlowBox, GestureClick, Label,
+    Orientation, Picture, Scale, SelectionMode, SpinButton, StringList,
 };
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -129,8 +129,12 @@ pub fn build_overview_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> ad
     page
 }
 
-/// Builds the DPI & Polling Rate page with debounced live slider + rate selector buttons.
-pub fn build_dpi_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> adw::PreferencesPage {
+/// Builds the DPI & Polling Rate page with debounced live slider, up to 6 DPI presets, and rate selector.
+pub fn build_dpi_page(
+    snap: &DeviceSnapshot,
+    backend: &BackendHandle,
+    dpi_presets: &Rc<RefCell<Vec<u16>>>,
+) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::new();
     page.set_title(tr("DPI & Sensor"));
     page.set_icon_name(Some("preferences-system-symbolic"));
@@ -171,39 +175,79 @@ pub fn build_dpi_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> adw::Pr
                 scale.set_size_request(220, -1);
                 scale.update_property(&[gtk4::accessible::Property::Label("DPI slider")]);
 
+                let suppress_slider = Rc::new(RefCell::new(false));
+                let last_sent_dpi = Rc::new(RefCell::new(sensor.current_dpi));
                 let debounce_source: Rc<RefCell<Option<glib::SourceId>>> =
                     Rc::new(RefCell::new(None));
-                let key = snap.summary.device_key.clone();
-                let sensor_idx = sensor.sensor_index;
-                let b = backend.clone();
-                let lbl = value_label.clone();
 
-                scale.connect_value_changed(move |s| {
-                    let raw = s.value().round();
-                    let clamped = raw.clamp(100.0, 32000.0);
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    let target_dpi = clamped as u16;
-                    lbl.set_text(&format!("{target_dpi} DPI"));
+                let presets_flow = FlowBox::new();
+                presets_flow.set_selection_mode(SelectionMode::None);
+                presets_flow.set_max_children_per_line(6);
+                presets_flow.set_column_spacing(8);
+                presets_flow.set_row_spacing(8);
+                presets_flow.set_margin_top(6);
+                presets_flow.set_margin_bottom(6);
 
-                    if let Some(prev) = debounce_source.borrow_mut().take() {
-                        prev.remove();
-                    }
-                    let key_inner = key.clone();
-                    let b_inner = b.clone();
-                    let ds_clone = Rc::clone(&debounce_source);
-                    let id = glib::timeout_add_local_once(
-                        std::time::Duration::from_millis(220),
-                        move || {
-                            *ds_clone.borrow_mut() = None;
-                            b_inner.send(UiCommand::SetDpi {
-                                device_key: key_inner,
-                                sensor_index: sensor_idx,
-                                dpi: target_dpi,
-                            });
-                        },
-                    );
-                    *debounce_source.borrow_mut() = Some(id);
-                });
+                let rebuild_ctx = PresetRebuildCtx {
+                    flow: presets_flow.clone(),
+                    presets: Rc::clone(dpi_presets),
+                    device_key: snap.summary.device_key.clone(),
+                    sensor_index: sensor.sensor_index,
+                    backend: backend.clone(),
+                    scale: scale.clone(),
+                    value_label: value_label.clone(),
+                    suppress_slider: Rc::clone(&suppress_slider),
+                    last_sent_dpi: Rc::clone(&last_sent_dpi),
+                };
+                rebuild_preset_buttons(&rebuild_ctx);
+
+                {
+                    let key = snap.summary.device_key.clone();
+                    let sensor_idx = sensor.sensor_index;
+                    let b = backend.clone();
+                    let lbl = value_label.clone();
+                    let sup = Rc::clone(&suppress_slider);
+                    let last = Rc::clone(&last_sent_dpi);
+                    let ctx_for_slider = rebuild_ctx.clone();
+                    let ds_outer = Rc::clone(&debounce_source);
+
+                    scale.connect_value_changed(move |s| {
+                        if *sup.borrow() {
+                            return;
+                        }
+                        let raw = s.value();
+                        let snapped_f = ((raw / step).round() * step).clamp(min_dpi, max_dpi);
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let target_dpi = snapped_f as u16;
+                        lbl.set_text(&format!("{target_dpi} DPI"));
+
+                        if let Some(prev) = ds_outer.borrow_mut().take() {
+                            prev.remove();
+                        }
+                        let key_inner = key.clone();
+                        let b_inner = b.clone();
+                        let ds_clone = Rc::clone(&ds_outer);
+                        let last_inner = Rc::clone(&last);
+                        let ctx_inner = ctx_for_slider.clone();
+                        let id = glib::timeout_add_local_once(
+                            std::time::Duration::from_millis(220),
+                            move || {
+                                *ds_clone.borrow_mut() = None;
+                                if *last_inner.borrow() == target_dpi {
+                                    return;
+                                }
+                                *last_inner.borrow_mut() = target_dpi;
+                                rebuild_preset_buttons(&ctx_inner);
+                                b_inner.send(UiCommand::SetDpi {
+                                    device_key: key_inner,
+                                    sensor_index: sensor_idx,
+                                    dpi: target_dpi,
+                                });
+                            },
+                        );
+                        *ds_outer.borrow_mut() = Some(id);
+                    });
+                }
 
                 let slider_row = adw::ActionRow::new();
                 slider_row.set_child(Some(&scale));
@@ -211,6 +255,53 @@ pub fn build_dpi_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> adw::Pr
                 group.add(&row);
                 group.add(&slider_row);
                 page.add(&group);
+
+                // DPI Presets Group (default 700, 1000, 1200, 3600; up to 6 stages)
+                let presets_group = adw::PreferencesGroup::new();
+                presets_group.set_title("DPI Presets");
+                presets_group.set_description(Some(
+                    "Click a preset to apply immediately, or add custom stages (max 6).",
+                ));
+
+                let presets_row = adw::ActionRow::new();
+                presets_row.set_child(Some(&presets_flow));
+                presets_group.add(&presets_row);
+
+                let add_row = adw::ActionRow::new();
+                add_row.set_title("Add Custom DPI");
+                let spin_adj = Adjustment::new(1600.0, min_dpi, max_dpi, step, step * 2.0, 0.0);
+                let spin = SpinButton::new(Some(&spin_adj), step, 0);
+                spin.set_valign(Align::Center);
+                let add_btn = Button::with_label("+ Add");
+                add_btn.add_css_class("suggested-action");
+                add_btn.set_valign(Align::Center);
+
+                {
+                    let ctx_add = rebuild_ctx.clone();
+                    let spin_ref = spin.clone();
+                    add_btn.connect_clicked(move |_| {
+                        let raw = spin_ref.value();
+                        let snapped_f = ((raw / step).round() * step).clamp(min_dpi, max_dpi);
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let dpi_val = snapped_f as u16;
+                        {
+                            let mut list = ctx_add.presets.borrow_mut();
+                            if list.len() < 6 && !list.contains(&dpi_val) {
+                                list.push(dpi_val);
+                                list.sort_unstable();
+                            }
+                        }
+                        rebuild_preset_buttons(&ctx_add);
+                    });
+                }
+
+                let add_box = GtkBox::new(Orientation::Horizontal, 8);
+                add_box.set_valign(Align::Center);
+                add_box.append(&spin);
+                add_box.append(&add_btn);
+                add_row.add_suffix(&add_box);
+                presets_group.add(&add_row);
+                page.add(&presets_group);
             }
         }
 
@@ -613,5 +704,67 @@ fn update_svg_picture(picture: &Picture, svg_name: Option<&str>, selected_svg_id
     {
         let texture = Texture::for_pixbuf(&pixbuf);
         picture.set_paintable(Some(&texture));
+    }
+}
+
+#[derive(Clone)]
+struct PresetRebuildCtx {
+    flow: FlowBox,
+    presets: Rc<RefCell<Vec<u16>>>,
+    device_key: String,
+    sensor_index: u8,
+    backend: BackendHandle,
+    scale: Scale,
+    value_label: Label,
+    suppress_slider: Rc<RefCell<bool>>,
+    last_sent_dpi: Rc<RefCell<u16>>,
+}
+
+fn rebuild_preset_buttons(ctx: &PresetRebuildCtx) {
+    while let Some(child) = ctx.flow.first_child() {
+        ctx.flow.remove(&child);
+    }
+    let list = ctx.presets.borrow().clone();
+    let active_dpi = *ctx.last_sent_dpi.borrow();
+    let can_remove = list.len() > 1;
+
+    for dpi_val in list {
+        let pill = GtkBox::new(Orientation::Horizontal, 0);
+        pill.add_css_class("linked");
+
+        let apply_btn = Button::with_label(&format!("{dpi_val} DPI"));
+        if dpi_val == active_dpi {
+            apply_btn.add_css_class("suggested-action");
+        }
+        {
+            let c = ctx.clone();
+            apply_btn.connect_clicked(move |_| {
+                *c.suppress_slider.borrow_mut() = true;
+                c.scale.set_value(f64::from(dpi_val));
+                c.value_label.set_text(&format!("{dpi_val} DPI"));
+                *c.suppress_slider.borrow_mut() = false;
+                *c.last_sent_dpi.borrow_mut() = dpi_val;
+                rebuild_preset_buttons(&c);
+                c.backend.send(UiCommand::SetDpi {
+                    device_key: c.device_key.clone(),
+                    sensor_index: c.sensor_index,
+                    dpi: dpi_val,
+                });
+            });
+        }
+        pill.append(&apply_btn);
+
+        if can_remove {
+            let rm_btn = Button::with_label("×");
+            rm_btn.set_tooltip_text(Some("Remove preset"));
+            let c = ctx.clone();
+            rm_btn.connect_clicked(move |_| {
+                c.presets.borrow_mut().retain(|&v| v != dpi_val);
+                rebuild_preset_buttons(&c);
+            });
+            pill.append(&rm_btn);
+        }
+
+        ctx.flow.insert(&pill, -1);
     }
 }

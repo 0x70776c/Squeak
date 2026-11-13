@@ -9,8 +9,8 @@ use std::time::Duration;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, DropDown, Label, ListBox, ListBoxRow, Orientation, SelectionMode,
-    Spinner, Stack, StackTransitionType, StringList,
+    Align, Box as GtkBox, Button, DropDown, IconTheme, Image, Label, ListBox, ListBoxRow,
+    Orientation, SelectionMode, Spinner, Stack, StackTransitionType, StringList,
 };
 use libadwaita as adw;
 use squeak_core::DaemonDeviceSummary;
@@ -24,12 +24,24 @@ use crate::state::{
 /// Application ID matching Desktop & Flatpak metadata.
 pub const APP_ID: &str = "dev.squeak.Squeak";
 
-#[derive(Default)]
 struct UiState {
     devices: Vec<DaemonDeviceSummary>,
     current_key: Option<String>,
     current_snapshot: Option<DeviceSnapshot>,
+    dpi_presets: Rc<RefCell<Vec<u16>>>,
     undo: UndoStack,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            devices: Vec::new(),
+            current_key: None,
+            current_snapshot: None,
+            dpi_presets: Rc::new(RefCell::new(vec![700, 1000, 1200, 3600])),
+            undo: UndoStack::default(),
+        }
+    }
 }
 
 /// Launches the `libadwaita` GUI application.
@@ -59,7 +71,11 @@ fn build_ui(app: &adw::Application) {
     let spinner = Spinner::new();
     spinner.set_spinning(true);
 
-    let undo_btn = Button::from_icon_name("edit-undo-symbolic");
+    let undo_btn = Button::new();
+    let undo_content = adw::ButtonContent::new();
+    undo_content.set_icon_name("edit-undo-symbolic");
+    undo_content.set_label(tr("Undo"));
+    undo_btn.set_child(Some(&undo_content));
     undo_btn.set_tooltip_text(Some(tr("Undo")));
     undo_btn.set_sensitive(false);
 
@@ -102,6 +118,9 @@ fn build_ui(app: &adw::Application) {
         .default_height(640)
         .content(&toast_overlay)
         .build();
+
+    let icon_theme = IconTheme::for_display(&WidgetExt::display(&window));
+    icon_theme.add_search_path("/usr/share/icons/Adwaita");
 
     // Wire Refresh button
     {
@@ -263,8 +282,9 @@ fn handle_ui_event(
             let model = StringList::new(&name_refs);
             device_dropdown.set_model(Some(&model));
 
+            let dpi_presets = Rc::clone(&state.borrow().dpi_presets);
             if let Some(snap) = snapshot {
-                render_snapshot(&snap, backend, content_stack, nav_list);
+                render_snapshot(&snap, backend, &dpi_presets, content_stack, nav_list);
             } else {
                 let empty = ErrorViewState::DeviceAsleepOrDisconnected {
                     device_name: "No HID++ devices".to_owned(),
@@ -274,8 +294,9 @@ fn handle_ui_event(
         }
         UiEvent::DeviceSnapshotLoaded(snap) => {
             spinner.set_spinning(false);
+            let dpi_presets = Rc::clone(&state.borrow().dpi_presets);
             state.borrow_mut().current_snapshot = Some((*snap).clone());
-            render_snapshot(&snap, backend, content_stack, nav_list);
+            render_snapshot(&snap, backend, &dpi_presets, content_stack, nav_list);
         }
         UiEvent::Error(err) => {
             spinner.set_spinning(false);
@@ -402,6 +423,7 @@ fn handle_ui_event(
 fn render_snapshot(
     snap: &DeviceSnapshot,
     backend: &BackendHandle,
+    dpi_presets: &Rc<RefCell<Vec<u16>>>,
     content_stack: &Stack,
     nav_list: &ListBox,
 ) {
@@ -429,6 +451,7 @@ fn render_snapshot(
         content_stack,
         nav_list,
         "overview",
+        "input-mouse-symbolic",
         tr("Overview"),
         &pages::build_overview_page(snap, backend),
     );
@@ -437,8 +460,9 @@ fn render_snapshot(
             content_stack,
             nav_list,
             "dpi",
+            "preferences-system-symbolic",
             tr("DPI & Sensor"),
-            &pages::build_dpi_page(snap, backend),
+            &pages::build_dpi_page(snap, backend, dpi_presets),
         );
     }
     if caps.has_buttons {
@@ -446,6 +470,7 @@ fn render_snapshot(
             content_stack,
             nav_list,
             "buttons",
+            "input-keyboard-symbolic",
             tr("Buttons"),
             &pages::build_buttons_page(snap),
         );
@@ -455,6 +480,7 @@ fn render_snapshot(
             content_stack,
             nav_list,
             "lighting",
+            "applications-graphics-symbolic",
             tr("Lighting"),
             &pages::build_lighting_page(snap, backend),
         );
@@ -464,6 +490,7 @@ fn render_snapshot(
             content_stack,
             nav_list,
             "profiles",
+            "drive-harddisk-symbolic",
             tr("Profiles"),
             &pages::build_profiles_page(snap, backend),
         );
@@ -473,6 +500,7 @@ fn render_snapshot(
             content_stack,
             nav_list,
             "scroll",
+            "view-sort-descending-symbolic",
             tr("Scroll Wheel"),
             &pages::build_scroll_page(snap),
         );
@@ -509,17 +537,28 @@ fn clear_stack_and_nav(stack: &Stack, nav: &ListBox) {
     }
 }
 
-fn add_page(stack: &Stack, nav: &ListBox, name: &str, title: &str, page: &impl IsA<gtk4::Widget>) {
+fn add_page(
+    stack: &Stack,
+    nav: &ListBox,
+    name: &str,
+    icon_name: &str,
+    title: &str,
+    page: &impl IsA<gtk4::Widget>,
+) {
     stack.add_named(page, Some(name));
     let row = ListBoxRow::new();
     row.set_widget_name(name);
+    let hbox = GtkBox::new(Orientation::Horizontal, 10);
+    hbox.set_margin_start(12);
+    hbox.set_margin_end(12);
+    hbox.set_margin_top(10);
+    hbox.set_margin_bottom(10);
+    let icon = Image::from_icon_name(icon_name);
     let lbl = Label::new(Some(title));
     lbl.set_halign(Align::Start);
-    lbl.set_margin_start(12);
-    lbl.set_margin_end(12);
-    lbl.set_margin_top(10);
-    lbl.set_margin_bottom(10);
-    row.set_child(Some(&lbl));
+    hbox.append(&icon);
+    hbox.append(&lbl);
+    row.set_child(Some(&hbox));
     nav.append(&row);
 }
 

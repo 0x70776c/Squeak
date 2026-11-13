@@ -292,6 +292,15 @@ async fn handle_command(client: &DaemonClient, cmd: UiCommand, evt_tx: &Sender<U
                     let _ = evt_tx.send(UiEvent::ReportRateApplied(rep));
                 }
                 Err(err) => {
+                    if client
+                        .set_onboard_mode(&device_key, "host", false)
+                        .await
+                        .is_ok()
+                        && let Ok(rep) = client.set_report_rate(&device_key, hz, false).await
+                    {
+                        let _ = evt_tx.send(UiEvent::ReportRateApplied(rep));
+                        return;
+                    }
                     let _ = evt_tx.send(UiEvent::ToastMessage(err.to_string()));
                 }
             }
@@ -320,6 +329,25 @@ async fn handle_command(client: &DaemonClient, cmd: UiCommand, evt_tx: &Sender<U
                     let _ = evt_tx.send(UiEvent::LedApplied(rep));
                 }
                 Err(err) => {
+                    if client
+                        .set_onboard_mode(&device_key, "host", false)
+                        .await
+                        .is_ok()
+                        && let Ok(rep) = client
+                            .set_led_effect(
+                                &device_key,
+                                zone_index,
+                                &effect,
+                                &color_hex,
+                                period_ms,
+                                brightness_pct,
+                                false,
+                            )
+                            .await
+                    {
+                        let _ = evt_tx.send(UiEvent::LedApplied(rep));
+                        return;
+                    }
                     let _ = evt_tx.send(UiEvent::ToastMessage(err.to_string()));
                 }
             }
