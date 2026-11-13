@@ -41,7 +41,10 @@ pub use firmware_info::{
     FirmwareInfoFeature, FirmwareInventory, TransportCapabilities,
 };
 pub use hires_wheel::{HiresWheelDriver, WheelCapability, WheelMode};
-pub use onboard_profiles::{OnboardMemoryDescription, OnboardMode, OnboardProfilesDriver};
+pub use onboard_profiles::{
+    OnboardMemoryDescription, OnboardMode, OnboardProfile, OnboardProfilesDriver,
+    ProfileDirectoryEntry, calculate_sector_crc, parse_onboard_profile, parse_profile_directory,
+};
 pub use report_rate::{
     ExtendedReportRateDriver, ReportRate, ReportRateDriver, ReportRateFeature, ReportRateState,
     ReportRateWriteVerification, read_report_rate, set_report_rate_verified,

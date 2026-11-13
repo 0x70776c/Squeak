@@ -1,5 +1,7 @@
 //! Command-line argument definitions (`clap`) for the `squeak` binary.
 
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 
 /// Top-level CLI entrypoint for `squeak`.
@@ -51,6 +53,9 @@ pub enum Command {
 
     /// List physical buttons or monitor click events (`0x8110` / `0x1B04`).
     Buttons(ButtonsArgs),
+
+    /// Manage onboard profile memory sectors (`0x8100`): list, backup, restore, set-active.
+    Profiles(ProfilesArgs),
 
     /// Dump the complete runtime feature table for a device (without serial numbers).
     #[command(name = "dump-device")]
@@ -303,6 +308,83 @@ pub struct ButtonsSpyArgs {
     pub target: TargetArgs,
 }
 
+/// Arguments for `squeak profiles`.
+#[derive(Debug, Args)]
+pub struct ProfilesArgs {
+    /// Action to perform on onboard memory profiles (`0x8100`).
+    #[command(subcommand)]
+    pub action: ProfilesCommand,
+}
+
+/// Subcommands under `squeak profiles`.
+#[derive(Debug, Subcommand)]
+pub enum ProfilesCommand {
+    /// List all onboard profile slots, active slot, DPI stages, and polling rates.
+    List(TargetArgs),
+
+    /// Read all profile memory sectors and save a verified backup file to disk.
+    Backup(ProfilesBackupArgs),
+
+    /// Restore memory sectors from a verified backup file (dry-run by default; pass `--apply` to flash).
+    Restore(ProfilesRestoreArgs),
+
+    /// Switch active onboard profile slot (dry-run by default; pass `--apply` to switch).
+    #[command(name = "set-active")]
+    SetActive(ProfilesSetActiveArgs),
+}
+
+/// Arguments for `squeak profiles backup`.
+#[derive(Debug, Args)]
+pub struct ProfilesBackupArgs {
+    /// Output file path (default: `~/.local/share/squeak/backups/<device>/backup_<timestamp>.json`).
+    #[arg(short, long)]
+    pub out: Option<PathBuf>,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+/// Arguments for `squeak profiles restore`.
+#[derive(Debug, Args)]
+pub struct ProfilesRestoreArgs {
+    /// Path to the verified profile backup JSON file.
+    pub file: PathBuf,
+
+    /// Actually flash the memory sectors to hardware.
+    /// When omitted, performs validation and prints a `--dry-run` plan only.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+
+    /// Explicitly preview without modifying hardware (default).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+/// Arguments for `squeak profiles set-active`.
+#[derive(Debug, Args)]
+pub struct ProfilesSetActiveArgs {
+    /// Profile slot index to activate (1-based, e.g. `1..=5`).
+    pub slot: u16,
+
+    /// Actually switch the active profile on hardware.
+    /// When omitted, performs validation and prints a `--dry-run` plan only.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+
+    /// Explicitly preview without modifying hardware (default).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
@@ -412,5 +494,58 @@ mod tests {
                 action: ButtonsCommand::List(_)
             })
         ));
+
+        let prof_list = Cli::try_parse_from(["squeak", "profiles", "list"]).unwrap();
+        assert!(matches!(
+            prof_list.command,
+            Command::Profiles(ProfilesArgs {
+                action: ProfilesCommand::List(_)
+            })
+        ));
+
+        let prof_backup =
+            Cli::try_parse_from(["squeak", "profiles", "backup", "--out", "/tmp/backup.json"])
+                .unwrap();
+        match prof_backup.command {
+            Command::Profiles(ProfilesArgs {
+                action: ProfilesCommand::Backup(args),
+            }) => {
+                assert_eq!(
+                    args.out.as_deref(),
+                    Some(std::path::Path::new("/tmp/backup.json"))
+                );
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let prof_restore = Cli::try_parse_from([
+            "squeak",
+            "profiles",
+            "restore",
+            "/tmp/backup.json",
+            "--apply",
+        ])
+        .unwrap();
+        match prof_restore.command {
+            Command::Profiles(ProfilesArgs {
+                action: ProfilesCommand::Restore(args),
+            }) => {
+                assert_eq!(args.file, std::path::PathBuf::from("/tmp/backup.json"));
+                assert!(args.apply);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let prof_set_active =
+            Cli::try_parse_from(["squeak", "profiles", "set-active", "2", "--apply"]).unwrap();
+        match prof_set_active.command {
+            Command::Profiles(ProfilesArgs {
+                action: ProfilesCommand::SetActive(args),
+            }) => {
+                assert_eq!(args.slot, 2);
+                assert!(args.apply);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 }

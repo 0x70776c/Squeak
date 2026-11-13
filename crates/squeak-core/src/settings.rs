@@ -330,6 +330,105 @@ pub struct OnboardModeReport {
     pub button_count: u8,
     /// Total sectors in onboard memory.
     pub sector_count: u8,
+    /// Sector size in bytes (e.g. 255).
+    pub sector_size: u16,
+}
+
+/// Detailed readout of an individual onboard profile slot (`0x8100`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnboardProfileSlotReport {
+    /// Slot index (1-based, e.g. 1..=5).
+    pub slot: u16,
+    /// Memory sector address (e.g. `0x0001`..`0x0005`).
+    pub sector_address: u16,
+    /// Whether this profile slot is enabled in the directory.
+    pub enabled: bool,
+    /// Whether this profile is the currently active profile on the mouse.
+    pub is_active: bool,
+    /// Polling report rate in Hz (e.g. 1000, 500, 250, 125).
+    pub report_rate_hz: u16,
+    /// Default DPI stage index (0-based).
+    pub default_dpi_stage: u8,
+    /// Sniper / Shift DPI stage index (0-based).
+    pub switched_dpi_stage: u8,
+    /// Configured DPI values for each stage.
+    pub dpi_stages: Vec<u16>,
+    /// Profile display name stored on hardware (empty if default).
+    pub name: String,
+    /// Whether sector CRC was verified against hardware checksum.
+    pub crc_verified: bool,
+}
+
+/// Complete directory and slots readout from `0x8100` `ONBOARD_PROFILES`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfilesListReport {
+    /// Feature version reported by firmware.
+    pub feature_version: u8,
+    /// Active operating mode (`"host"` or `"onboard"`).
+    pub mode: String,
+    /// Active profile slot (`1..=5`, or `0` if in host mode).
+    pub current_profile: u16,
+    /// Total profile slots supported.
+    pub profile_count: u8,
+    /// Total memory sectors.
+    pub sector_count: u8,
+    /// Sector size in bytes.
+    pub sector_size: u16,
+    /// List of profile slots parsed from memory sectors.
+    pub profiles: Vec<OnboardProfileSlotReport>,
+}
+
+/// Output of `squeak profiles backup`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileBackupReport {
+    /// Absolute path to the saved backup JSON file.
+    pub backup_path: String,
+    /// Device vendor ID formatted as hex.
+    pub vendor_id: String,
+    /// Device product ID formatted as hex.
+    pub product_id: String,
+    /// Number of memory sectors successfully saved.
+    pub sectors_saved: usize,
+    /// Total bytes saved across all sectors.
+    pub total_bytes: usize,
+}
+
+/// Output of `squeak profiles restore` (both preview and `--apply`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileRestoreReport {
+    /// `true` when writes were actually committed (`--apply`), `false` in `--dry-run`.
+    pub applied: bool,
+    /// Path of the backup file restored.
+    pub backup_path: String,
+    /// Number of sectors to restore.
+    pub sectors_to_restore: usize,
+    /// Total bytes to write.
+    pub total_bytes: usize,
+    /// Wire frame sequence planned for flashing.
+    pub planned_writes: Vec<PlannedWireFrame>,
+    /// `true` if readback verification passed after applying.
+    pub verified: bool,
+    /// Optional safety notice.
+    pub note: Option<String>,
+}
+
+/// Output of `squeak profiles set-active` (both preview and `--apply`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileSetActiveReport {
+    /// `true` when profile switch was applied.
+    pub applied: bool,
+    /// Target slot requested (`1..=5`).
+    pub requested_slot: u16,
+    /// Slot active prior to the command.
+    pub previous_slot: u16,
+    /// Slot read back after applying.
+    pub readback_slot: Option<u16>,
+    /// `true` when readback matches requested slot.
+    pub verified: bool,
+    /// Planned wire frame.
+    pub planned_frame: PlannedWireFrame,
+    /// Optional notice.
+    pub note: Option<String>,
 }
 
 /// Output of `squeak host-mode set` (both `--dry-run` preview and `--apply` verified write).

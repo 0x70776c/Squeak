@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::cli::{
     ButtonsCommand, Cli, Command, DpiCommand, HostModeCommand, LedCommand, ListArgs,
-    ReportRateCommand, TargetArgs,
+    ProfilesCommand, ReportRateCommand, TargetArgs,
 };
 use crate::m3::{
     dpi_get_from_transport, dpi_set_from_transport, format_dpi_get_human, format_dpi_set_human,
@@ -27,6 +27,11 @@ use crate::m5::{
     format_host_mode_set_human, format_led_get_human, format_led_set_human,
     host_mode_get_from_transport, host_mode_set_from_transport, led_get_from_transport,
     led_set_from_transport, run_buttons_spy,
+};
+use crate::m6::{
+    format_profiles_backup_human, format_profiles_list_human, format_profiles_restore_human,
+    format_profiles_set_active_human, profiles_backup_from_transport, profiles_list_from_transport,
+    profiles_restore_from_transport, profiles_set_active_from_transport,
 };
 use crate::udev::{UdevSetupError, format_setup_udev_human, run_setup_udev};
 
@@ -147,6 +152,42 @@ pub fn execute(cli: Cli) -> Result<String, CliError> {
             ButtonsCommand::Spy(spy_args) => {
                 let (device_index, transport) = open_selected_transport(&spy_args.target)?;
                 run_buttons_spy(transport, device_index, spy_args.count, cli.json)
+            }
+        },
+        Command::Profiles(args) => match args.action {
+            ProfilesCommand::List(target) => {
+                let (device_index, transport) = open_selected_transport(&target)?;
+                let report = profiles_list_from_transport(transport, device_index)?;
+                format_output(&report, cli.json, format_profiles_list_human)
+            }
+            ProfilesCommand::Backup(backup_args) => {
+                let (device_index, transport) = open_selected_transport(&backup_args.target)?;
+                let report = profiles_backup_from_transport(
+                    transport,
+                    device_index,
+                    backup_args.out.as_deref(),
+                )?;
+                format_output(&report, cli.json, format_profiles_backup_human)
+            }
+            ProfilesCommand::Restore(restore_args) => {
+                let (device_index, transport) = open_selected_transport(&restore_args.target)?;
+                let report = profiles_restore_from_transport(
+                    transport,
+                    device_index,
+                    &restore_args.file,
+                    restore_args.apply,
+                )?;
+                format_output(&report, cli.json, format_profiles_restore_human)
+            }
+            ProfilesCommand::SetActive(set_active_args) => {
+                let (device_index, transport) = open_selected_transport(&set_active_args.target)?;
+                let report = profiles_set_active_from_transport(
+                    transport,
+                    device_index,
+                    set_active_args.slot,
+                    set_active_args.apply,
+                )?;
+                format_output(&report, cli.json, format_profiles_set_active_human)
             }
         },
         Command::DumpDevice(args) => run_dump_device(&args, &db, cli.json),

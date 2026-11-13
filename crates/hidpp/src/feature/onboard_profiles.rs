@@ -1,7 +1,7 @@
 //! `ONBOARD_PROFILES` (`0x8100`) feature driver.
 //!
 //! Controls host software mode vs. onboard profile memory mode, profile slot selection,
-//! and onboard memory layout inspection for devices such as the G502 HERO.
+//! onboard memory sector reading, writing, and CRC verification for devices such as the G502 HERO.
 
 use crate::error::{HidppError, ProtocolError};
 use crate::feature::{FeatureEntry, FeatureId, FeatureTable, HidppFeature, check_feature_version};
@@ -14,6 +14,10 @@ const FN_SET_ONBOARD_MODE: u8 = 1;
 const FN_GET_ONBOARD_MODE: u8 = 2;
 const FN_SET_CURRENT_PROFILE: u8 = 3;
 const FN_GET_CURRENT_PROFILE: u8 = 4;
+const FN_READ_MEMORY: u8 = 5;
+const FN_WRITE_ADDR: u8 = 6;
+const FN_WRITE_DATA: u8 = 7;
+const FN_WRITE_END: u8 = 8;
 
 /// Operational mode of the device: onboard profile memory vs. host software mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -54,12 +58,159 @@ impl From<OnboardMode> for u8 {
 pub struct OnboardMemoryDescription {
     /// Memory model / format identifier (e.g. `0x01`).
     pub memory_model: u8,
+    /// Profile format layout identifier (e.g. `0x02` for G303/G502).
+    pub profile_format: u8,
+    /// Macro format identifier (e.g. `0x01`).
+    pub macro_format: u8,
     /// Number of onboard profile slots (e.g. `5`).
     pub profile_count: u8,
+    /// Number of out-of-box / ROM profile slots (e.g. `5`).
+    pub rom_profile_count: u8,
     /// Number of physical buttons mapped in profiles (e.g. `11`).
     pub button_count: u8,
     /// Number of memory sectors (e.g. `16`).
     pub sector_count: u8,
+    /// Size of each memory sector in bytes (e.g. `255`).
+    pub sector_size: u16,
+    /// Mechanical layout flags.
+    pub mechanical_layout: u8,
+    /// Various info flags (e.g. `0x01` = corded).
+    pub various_info: u8,
+}
+
+/// Entry in the profile directory (sector 0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProfileDirectoryEntry {
+    /// Memory address / sector index of the profile (e.g. `0x0001`..`0x0005`).
+    pub sector_address: u16,
+    /// Whether this profile slot is enabled.
+    pub enabled: bool,
+}
+
+/// Parsed representation of an onboard profile sector (format 2 / G502).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnboardProfile {
+    /// Slot index (1-based, e.g. 1..=5).
+    pub slot: u16,
+    /// Report rate in Hz (e.g. 1000, 500, 250, 125).
+    pub report_rate_hz: u16,
+    /// Default DPI stage index (0-based).
+    pub default_dpi_stage: u8,
+    /// Switched / Shift (Sniper) DPI stage index (0-based).
+    pub switched_dpi_stage: u8,
+    /// Configured DPI stages (up to 5).
+    pub dpi_stages: Vec<u16>,
+    /// Profile display name (empty if default).
+    pub name: String,
+}
+
+/// Computes the 16-bit CCITT CRC used for Logitech HID++ 2.0 onboard profile sectors.
+///
+/// Initial seed is `0xFFFF`, polynomial `0x1021`.
+#[must_use]
+pub fn calculate_sector_crc(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0xFFFF;
+    for &byte in data {
+        let temp = (crc >> 8) ^ u16::from(byte);
+        crc <<= 8;
+        let mut quick = temp ^ (temp >> 4);
+        crc ^= quick;
+        quick = quick.wrapping_shl(5);
+        crc ^= quick;
+        quick = quick.wrapping_shl(7);
+        crc ^= quick;
+    }
+    crc
+}
+
+/// Parses sector 0 into directory entries.
+///
+/// # Errors
+///
+/// Returns [`ProtocolError`] if sector data is truncated or corrupt.
+pub fn parse_profile_directory(
+    data: &[u8],
+    profile_count: u8,
+) -> Result<Vec<ProfileDirectoryEntry>, ProtocolError> {
+    if data.len() < 4 * usize::from(profile_count) {
+        return Err(ProtocolError::UnexpectedResponse {
+            detail: format!("directory sector too short: {} bytes", data.len()),
+        });
+    }
+    let mut entries = Vec::with_capacity(usize::from(profile_count));
+    for i in 0..usize::from(profile_count) {
+        let offset = i * 4;
+        let addr = u16::from_be_bytes([data[offset], data[offset + 1]]);
+        if addr == 0xFFFF {
+            break;
+        }
+        let enabled = data[offset + 2] != 0;
+        entries.push(ProfileDirectoryEntry {
+            sector_address: addr,
+            enabled,
+        });
+    }
+    Ok(entries)
+}
+
+/// Parses an onboard profile sector (format 2 / G502).
+///
+/// # Errors
+///
+/// Returns [`ProtocolError`] if sector data is too short or malformed.
+pub fn parse_onboard_profile(slot: u16, data: &[u8]) -> Result<OnboardProfile, ProtocolError> {
+    if data.len() < 32 {
+        return Err(ProtocolError::UnexpectedResponse {
+            detail: format!("profile sector too short: {} bytes", data.len()),
+        });
+    }
+
+    let report_rate_byte = data[0];
+    let report_rate_hz = match report_rate_byte {
+        1 => 1000,
+        2 => 500,
+        4 => 250,
+        8 => 125,
+        other => {
+            if other == 0 {
+                1000
+            } else {
+                1000 / u16::from(other)
+            }
+        }
+    };
+
+    let default_dpi_stage = data[1];
+    let switched_dpi_stage = data[2];
+
+    let mut dpi_stages = Vec::new();
+    for i in 0..5 {
+        let offset = 3 + 2 * i;
+        if offset + 1 < data.len() {
+            let dpi = u16::from_le_bytes([data[offset], data[offset + 1]]);
+            if dpi > 0 && dpi != 0xFFFF {
+                dpi_stages.push(dpi);
+            }
+        }
+    }
+
+    let mut name = String::new();
+    if data.len() >= 208 {
+        let name_bytes = &data[160..208];
+        if !name_bytes.iter().all(|&b| b == 0xFF) {
+            let trimmed = name_bytes.split(|&b| b == 0).next().unwrap_or(name_bytes);
+            name = String::from_utf8_lossy(trimmed).trim().to_string();
+        }
+    }
+
+    Ok(OnboardProfile {
+        slot,
+        report_rate_hz,
+        default_dpi_stage,
+        switched_dpi_stage,
+        dpi_stages,
+        name,
+    })
 }
 
 /// Driver for `ONBOARD_PROFILES` (`0x8100`).
@@ -127,19 +278,26 @@ impl OnboardProfilesDriver {
         let function = FunctionId::new(FN_GET_DESCRIPTION)?;
         let reply = session.request(device_index, self.feature_index, function, &[])?;
         let params = reply.params();
-        if params.len() < 7 {
+        if params.len() < 11 {
             return Err(HidppError::Protocol(ProtocolError::UnexpectedResponse {
                 detail: format!(
-                    "ONBOARD_PROFILES getDescription returned {} bytes (expected >= 7)",
+                    "ONBOARD_PROFILES getDescription returned {} bytes (expected >= 11)",
                     params.len()
                 ),
             }));
         }
+        let sector_size = u16::from_be_bytes([params[7], params[8]]);
         Ok(OnboardMemoryDescription {
             memory_model: params[0],
+            profile_format: params[1],
+            macro_format: params[2],
             profile_count: params[3],
-            button_count: params[4],
-            sector_count: params[5],
+            rom_profile_count: params[4],
+            button_count: params[5],
+            sector_count: params[6],
+            sector_size,
+            mechanical_layout: params[9],
+            various_info: params[10],
         })
     }
 
@@ -230,6 +388,119 @@ impl OnboardProfilesDriver {
         }
         Ok(u16::from_be_bytes([params[0], params[1]]))
     }
+
+    /// Reads a memory sector in 16-byte chunks (`fn 5`).
+    ///
+    /// Validates sector CRC in the last 2 bytes when `verify_crc` is true.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HidppError`] if reading fails, or [`ProtocolError::UnexpectedResponse`] if CRC validation fails.
+    pub fn read_sector<T: HidTransport>(
+        &self,
+        session: &mut HidppSession<T>,
+        device_index: DeviceIndex,
+        sector: u16,
+        sector_size: u16,
+        verify_crc: bool,
+    ) -> Result<Vec<u8>, HidppError> {
+        let function = FunctionId::new(FN_READ_MEMORY)?;
+        let mut buffer = vec![0u8; usize::from(sector_size)];
+        let sector_usize = usize::from(sector_size);
+
+        let mut offset = 0;
+        while offset < sector_usize {
+            let read_offset = if sector_usize.saturating_sub(offset) < 16 {
+                sector_usize.saturating_sub(16)
+            } else {
+                offset
+            };
+
+            let mut req = [0u8; 4];
+            req[0..2].copy_from_slice(&sector.to_be_bytes());
+            req[2..4].copy_from_slice(&(read_offset as u16).to_be_bytes());
+
+            let reply = session.request(device_index, self.feature_index, function, &req)?;
+            let chunk = reply.params();
+            if chunk.len() < 16 {
+                return Err(HidppError::Protocol(ProtocolError::UnexpectedResponse {
+                    detail: format!("memory read returned {} bytes (expected 16)", chunk.len()),
+                }));
+            }
+
+            let copy_len = (sector_usize - read_offset).min(16);
+            let target_slice = &mut buffer[read_offset..read_offset + copy_len];
+            target_slice.copy_from_slice(&chunk[..copy_len]);
+
+            if read_offset == sector_usize.saturating_sub(16) {
+                break;
+            }
+            offset += 16;
+        }
+
+        if verify_crc && sector_usize >= 2 {
+            let data_len = sector_usize - 2;
+            let read_crc = u16::from_be_bytes([buffer[data_len], buffer[data_len + 1]]);
+            let calc_crc = calculate_sector_crc(&buffer[..data_len]);
+            if read_crc != calc_crc {
+                return Err(HidppError::Protocol(ProtocolError::UnexpectedResponse {
+                    detail: format!(
+                        "sector 0x{sector:04x} CRC mismatch: read 0x{read_crc:04x}, calculated 0x{calc_crc:04x}"
+                    ),
+                }));
+            }
+        }
+
+        Ok(buffer)
+    }
+
+    /// Writes a memory sector in 16-byte chunks with start/data/end sequence (`fn 6`, `fn 7`, `fn 8`).
+    ///
+    /// Automatically computes and attaches the 16-bit CRC in the final 2 bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HidppError`] if writing fails.
+    pub fn write_sector<T: HidTransport>(
+        &self,
+        session: &mut HidppSession<T>,
+        device_index: DeviceIndex,
+        sector: u16,
+        data: &[u8],
+    ) -> Result<(), HidppError> {
+        let sector_size = data.len();
+        if !(2..=512).contains(&sector_size) {
+            return Err(HidppError::Protocol(ProtocolError::InvalidArgument {
+                detail: format!("invalid sector size for write: {sector_size}"),
+            }));
+        }
+
+        let mut payload = data.to_vec();
+        let crc = calculate_sector_crc(&payload[..sector_size - 2]);
+        payload[sector_size - 2..sector_size].copy_from_slice(&crc.to_be_bytes());
+
+        // 1. write_start (fn 6): sector, sub_address=0, count=sector_size
+        let fn_start = FunctionId::new(FN_WRITE_ADDR)?;
+        let mut start_params = [0u8; 6];
+        start_params[0..2].copy_from_slice(&sector.to_be_bytes());
+        start_params[2..4].copy_from_slice(&0u16.to_be_bytes());
+        start_params[4..6].copy_from_slice(&(sector_size as u16).to_be_bytes());
+        let _ = session.request(device_index, self.feature_index, fn_start, &start_params)?;
+
+        // 2. write_data (fn 7): 16 bytes per chunk
+        let fn_write = FunctionId::new(FN_WRITE_DATA)?;
+        for chunk in payload.chunks(16) {
+            let mut chunk_buf = [0u8; 16];
+            chunk_buf[..chunk.len()].copy_from_slice(chunk);
+            let _ = session.request(device_index, self.feature_index, fn_write, &chunk_buf)?;
+        }
+
+        // 3. write_end (fn 8)
+        let fn_end = FunctionId::new(FN_WRITE_END)?;
+        let _ = session.request(device_index, self.feature_index, fn_end, &[])?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -274,7 +545,10 @@ mod tests {
                 feat_idx,
                 FunctionId::new(0).unwrap(),
                 SwId::DEFAULT_REQUEST,
-                &[0x01, 0x02, 0x01, 0x05, 0x0B, 0x10, 0x00],
+                &[
+                    0x01, 0x02, 0x01, 0x05, 0x05, 0x0B, 0x10, 0x00, 0xFF, 0x0A, 0x01, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
             )
             .unwrap(),
         );
@@ -318,7 +592,7 @@ mod tests {
             .unwrap(),
         );
 
-        // 5. fn 4 getCurrentProfile in host mode -> 0x0000
+        // 5. fn 4 getCurrentProfile -> in Host mode returns 0
         mock.push_frame(
             HidppFrame::new(
                 ReportId::Long,
@@ -331,13 +605,41 @@ mod tests {
             .unwrap(),
         );
 
+        // 6. fn 1 setOnboardMode -> switch back to Onboard mode (0x01)
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Long,
+                dev_idx,
+                feat_idx,
+                FunctionId::new(1).unwrap(),
+                SwId::DEFAULT_REQUEST,
+                &[0x00, 0x00],
+            )
+            .unwrap(),
+        );
+
+        // 7. fn 4 getCurrentProfile -> returns Slot 1
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Long,
+                dev_idx,
+                feat_idx,
+                FunctionId::new(4).unwrap(),
+                SwId::DEFAULT_REQUEST,
+                &[0x00, 0x01],
+            )
+            .unwrap(),
+        );
+
         let mut session = test_session(mock);
 
         let desc = driver.get_description(&mut session, dev_idx).unwrap();
-        assert_eq!(desc.memory_model, 1);
+        assert_eq!(desc.memory_model, 0x01);
+        assert_eq!(desc.profile_format, 0x02);
         assert_eq!(desc.profile_count, 5);
         assert_eq!(desc.button_count, 11);
         assert_eq!(desc.sector_count, 16);
+        assert_eq!(desc.sector_size, 255);
 
         let mode = driver.get_onboard_mode(&mut session, dev_idx).unwrap();
         assert_eq!(mode, OnboardMode::Onboard);
@@ -346,11 +648,18 @@ mod tests {
             .set_onboard_mode(&mut session, dev_idx, OnboardMode::Host)
             .unwrap();
 
-        let mode_after = driver.get_onboard_mode(&mut session, dev_idx).unwrap();
-        assert_eq!(mode_after, OnboardMode::Host);
+        let host_mode = driver.get_onboard_mode(&mut session, dev_idx).unwrap();
+        assert_eq!(host_mode, OnboardMode::Host);
 
-        let active_prof = driver.get_current_profile(&mut session, dev_idx).unwrap();
-        assert_eq!(active_prof, 0);
+        let cur_prof_host = driver.get_current_profile(&mut session, dev_idx).unwrap();
+        assert_eq!(cur_prof_host, 0);
+
+        driver
+            .set_onboard_mode(&mut session, dev_idx, OnboardMode::Onboard)
+            .unwrap();
+
+        let cur_prof_onboard = driver.get_current_profile(&mut session, dev_idx).unwrap();
+        assert_eq!(cur_prof_onboard, 1);
     }
 
     #[test]
@@ -370,5 +679,92 @@ mod tests {
 
         let res = driver.set_current_profile(&mut session, dev_idx, 0);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_calculate_sector_crc_known_vector() {
+        // Sector 0 vector from real G502 HERO
+        let mut sector0 = vec![0xFF; 255];
+        sector0[0..4].copy_from_slice(&[0x00, 0x01, 0x01, 0xFF]);
+        sector0[4..8].copy_from_slice(&[0x00, 0x02, 0x01, 0xFF]);
+        sector0[8..12].copy_from_slice(&[0x00, 0x03, 0x01, 0xFF]);
+        sector0[12..16].copy_from_slice(&[0x00, 0x04, 0x01, 0xFF]);
+        sector0[16..20].copy_from_slice(&[0x00, 0x05, 0x01, 0xFF]);
+
+        let crc = calculate_sector_crc(&sector0[..253]);
+        assert_eq!(crc, 0x8601);
+    }
+
+    #[test]
+    fn test_parse_directory_and_profile() {
+        let mut sector0 = vec![0xFF; 255];
+        sector0[0..4].copy_from_slice(&[0x00, 0x01, 0x01, 0xFF]);
+        sector0[4..8].copy_from_slice(&[0x00, 0x02, 0x00, 0xFF]);
+        sector0[8..12].copy_from_slice(&[0x00, 0x03, 0x01, 0xFF]);
+        sector0[12..16].copy_from_slice(&[0xFF, 0xFF, 0x00, 0xFF]);
+
+        let dir = parse_profile_directory(&sector0, 5).unwrap();
+        assert_eq!(dir.len(), 3);
+        assert_eq!(dir[0].sector_address, 1);
+        assert!(dir[0].enabled);
+        assert_eq!(dir[1].sector_address, 2);
+        assert!(!dir[1].enabled);
+        assert_eq!(dir[2].sector_address, 3);
+        assert!(dir[2].enabled);
+
+        let mut sector1 = vec![0xFF; 255];
+        sector1[0] = 1; // 1000 Hz
+        sector1[1] = 1; // default stage index 1
+        sector1[2] = 0; // sniper stage index 0
+        sector1[3..5].copy_from_slice(&1200u16.to_le_bytes());
+        sector1[5..7].copy_from_slice(&2400u16.to_le_bytes());
+        sector1[7..9].copy_from_slice(&3200u16.to_le_bytes());
+        sector1[9..11].copy_from_slice(&0u16.to_le_bytes());
+
+        let prof = parse_onboard_profile(1, &sector1).unwrap();
+        assert_eq!(prof.slot, 1);
+        assert_eq!(prof.report_rate_hz, 1000);
+        assert_eq!(prof.default_dpi_stage, 1);
+        assert_eq!(prof.switched_dpi_stage, 0);
+        assert_eq!(prof.dpi_stages, vec![1200, 2400, 3200]);
+        assert_eq!(prof.name, "");
+    }
+
+    #[test]
+    fn test_read_sector_crc_mismatch_detected() {
+        let feat_idx = FeatureIndex(0x0C);
+        let dev_idx = DeviceIndex::DIRECT;
+        let entry = FeatureEntry {
+            index: feat_idx,
+            id: FeatureId::ONBOARD_PROFILES,
+            version: 0,
+            flags: crate::feature::FeatureFlags::default(),
+        };
+        let driver = OnboardProfilesDriver::from_entry(&entry).unwrap();
+        let info = HidDeviceInfo::mock(0x046D, 0xC08B, "G502 HERO");
+        let mut mock = MockTransport::new(info);
+
+        // Push 16 chunks of 16 bytes for a 255-byte sector
+        let fn5 = FunctionId::new(5).unwrap();
+        for _ in 0..16 {
+            mock.push_frame(
+                HidppFrame::new(
+                    ReportId::Long,
+                    dev_idx,
+                    feat_idx,
+                    fn5,
+                    SwId::DEFAULT_REQUEST,
+                    &[0xAA; 16],
+                )
+                .unwrap(),
+            );
+        }
+
+        let mut session = test_session(mock);
+        // Sector CRC will not match 0xAAAA
+        let res = driver.read_sector(&mut session, dev_idx, 1, 255, true);
+        assert!(res.is_err());
+        let err_str = format!("{:?}", res.unwrap_err());
+        assert!(err_str.contains("CRC mismatch"));
     }
 }

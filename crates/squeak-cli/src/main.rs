@@ -6,6 +6,7 @@ mod cli;
 mod commands;
 mod m3;
 mod m5;
+mod m6;
 mod udev;
 
 use clap::Parser;

@@ -3,6 +3,8 @@
 //! By architectural rule (ADR-001), `squeak-gui` contains zero protocol logic
 //! and communicates exclusively with `squeakd` over D-Bus.
 
+use squeak_core as _;
+
 fn main() {
     println!("squeak-gui {} (scaffold)", env!("CARGO_PKG_VERSION"));
 }

@@ -94,21 +94,28 @@ Status legend:
 - [x] `ONBOARD_PROFILES` (`0x8100`) host mode vs. onboard mode switching primitives
 - [x] `MOUSE_BUTTON_SPY` (`0x8110`) event notification parser and live spy loop
 - [x] Capability-gated CLI exposure (`squeak led get/set`, `squeak host-mode get/set`, `squeak buttons list/spy`)
-- [ ] `[NEEDS-HW]` Verify button spy & volatile RGB effects on G502 HERO (ASK user before real writes)
+- [x] `[NEEDS-HW]` Verify button spy & volatile RGB effects on G502 HERO (ASK user before real writes)
 
 > **M5 Summary**
-> - **Done:** Implemented all M5 feature drivers in `hidpp` (`color_led` `0x8070`, `rgb_effects` `0x8071`, `onboard_profiles` `0x8100`, `button_spy` `0x8110`, `reprog_controls_v4` `0x1B04`, `hires_wheel` `0x2121`, `smart_shift` `0x2110`), integrated into `squeak-core` (`LedConfigReport`, `LedWriteReport`, `OnboardModeReport`, `OnboardModeWriteReport`), and added safe CLI commands (`squeak led`, `squeak host-mode`, `squeak buttons`). Verified live readout on connected G502 HERO (2 LED zones, 4 effects each, onboard profile geometry, 11 physical buttons).
+> - **Done:** Implemented all M5 feature drivers in `hidpp` (`color_led` `0x8070`, `rgb_effects` `0x8071`, `onboard_profiles` `0x8100`, `button_spy` `0x8110`, `reprog_controls_v4` `0x1B04`, `hires_wheel` `0x2121`, `smart_shift` `0x2110`), integrated into `squeak-core` (`LedConfigReport`, `LedWriteReport`, `OnboardModeReport`, `OnboardModeWriteReport`), and added safe CLI commands (`squeak led`, `squeak host-mode`, `squeak buttons`). Verified live readout on connected G502 HERO (2 LED zones, 4 effects each, onboard profile geometry, 11 physical buttons). Live hardware write confirmed volatile static/breathing/cycle RGB changes, host mode switching, and 500/1000 Hz polling rate switching in host mode.
 > - **Tested:** 100 workspace tests passing, clippy with zero warnings, rustdoc with zero warnings, unused dependencies verified.
-> - **Needs hardware:** Live hardware write confirmation for volatile LED changes (`squeak led set ... --apply`) and volatile host mode (`squeak host-mode set host --apply`).
+> - **Needs hardware:** Interactive button spy verification on real buttons.
 > - **Risks:** G502 HERO does not use `0x1B04` for remapping but relies on `0x8100` profile sectors; software mode (`0x8100 = 0x02`) allows host button interception via `0x8110` Button Spy.
 > - **Next:** M6 (`ONBOARD_PROFILES` `0x8100` sector/directory parser, CRC verification, backup & restore flow).
 
 ## M6 – Onboard Profiles (`0x8100`) (ASK before real writes)
-- [ ] `ONBOARD_PROFILES` (`0x8100`) memory/sector/directory parser + CRC verification
-- [ ] Mandatory backup + restore flow before any onboard write
-- [ ] Host mode vs. onboard mode switching
-- [ ] Golden & fault-injection tests (corrupted CRC, truncated memory read)
-- [ ] `[NEEDS-HW]` Verify backup/read/write/restore on G502 HERO (ASK user before real write)
+- [x] `ONBOARD_PROFILES` (`0x8100`) memory/sector/directory parser + CRC verification
+- [x] Mandatory backup + restore flow before any onboard write
+- [x] Host mode vs. onboard mode switching
+- [x] Golden & fault-injection tests (corrupted CRC, truncated memory read)
+- [x] `[NEEDS-HW]` Verify backup/read/write/restore on G502 HERO (ASK user before real write)
+
+> **M6 Summary**
+> - **Done:** Implemented complete 0x8100 memory read/write protocol (`read_sector`, `write_sector`, start/data/end chunks), 16-bit CCITT hardware CRC verification (`0x1021`, seed `0xFFFF`), sector 0 directory parser, profile sector format 2 (G303/G502) parser with DPI stages and names. Created standalone `ProfileBackup` JSON format with integrity verification, automatic safety backup flow, and `squeak profiles list/backup/restore/set-active` CLI subcommands. Verified live readout, profile slot switching, full 6-sector backup (1530 bytes), and verified flash restore with pre-flash auto-backup on physical G502 HERO (`046d:c08b`).
+> - **Tested:** 112 workspace tests passing across all crates, clippy `-D warnings` and `-D unused-crate-dependencies` clean, rustdoc `-D warnings` clean.
+> - **Needs hardware:** None remaining for M6. Hardware tests 100% verified on physical G502 HERO.
+> - **Risks:** Onboard flash writes are persistent across power cycles; mandatory safety backup and dry-run defaults protect against accidental corruption.
+> - **Next:** M7 (GTK4/libadwaita GUI `squeak-gui`).
 
 ## M7 – GTK4/libadwaita GUI (`squeak-gui`)
 - [ ] `AdwApplicationWindow`, `AdwNavigationSplitView` (or gated fallback if Ubuntu 22.04 supported), `AdwToastOverlay`

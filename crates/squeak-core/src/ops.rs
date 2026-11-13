@@ -3,22 +3,27 @@
 //! Keeps capability validation, `--dry-run` planning, and post-write readback verification in
 //! one single place so CLI direct mode and daemon DBus handlers behave identically.
 
+use std::collections::BTreeMap;
+use std::path::Path;
+
 use hidpp::{
     AdjustableDpiDriver, AdjustableDpiFeature, ColorLedEffectsDriver, DeviceIndex,
     DeviceNameDriver, DeviceNameFeature, Dpi, DpiCapabilities, ExtendedReportRateDriver, FeatureId,
     FeatureTable, FirmwareInfoDriver, FirmwareInfoFeature, HidDeviceInfo, HidTransport, HidppError,
     HidppFeature, HidppSession, LedEffect, LedEffectId, OnboardMode, OnboardProfilesDriver,
-    ProtocolError, ReportRate, ReportRateDriver, read_battery, read_report_rate,
-    set_report_rate_verified,
+    ProtocolError, ReportRate, ReportRateDriver, parse_onboard_profile, parse_profile_directory,
+    read_battery, read_report_rate, set_report_rate_verified,
 };
 
 use crate::device_data::DeviceDatabase;
 use crate::dump::DeviceDump;
+use crate::profile_backup::{ProfileBackup, default_backup_path};
 use crate::settings::{
     BatteryStatusReport, DeviceNameReport, DeviceStatusReport, DpiConfigReport, DpiWriteReport,
     FirmwareSummaryReport, LedConfigReport, LedWriteReport, LedZoneStatusReport, OnboardModeReport,
-    OnboardModeWriteReport, PlannedWireFrame, ReportRateConfigReport, ReportRateWriteReport,
-    SensorDpiReport,
+    OnboardModeWriteReport, OnboardProfileSlotReport, PlannedWireFrame, ProfileBackupReport,
+    ProfileRestoreReport, ProfileSetActiveReport, ProfilesListReport, ReportRateConfigReport,
+    ReportRateWriteReport, SensorDpiReport,
 };
 
 const FN_DPI_SET: u8 = 3;
@@ -631,6 +636,7 @@ pub fn read_onboard_mode<T: HidTransport>(
         profile_count: desc.profile_count,
         button_count: desc.button_count,
         sector_count: desc.sector_count,
+        sector_size: desc.sector_size,
     }))
 }
 
@@ -701,4 +707,502 @@ pub fn execute_host_mode_write<T: HidTransport>(
             None
         },
     })
+}
+
+/// Reads the onboard profiles directory (sector 0) and all profile sectors via `0x8100`.
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if reading or parsing sectors fails.
+pub fn read_profiles_summary<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    table: &FeatureTable,
+) -> Result<ProfilesListReport, HidppError> {
+    let Some(entry) = table.get(FeatureId::ONBOARD_PROFILES) else {
+        return Err(ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::ONBOARD_PROFILES,
+        }
+        .into());
+    };
+    let driver = OnboardProfilesDriver::from_entry(entry)?;
+    let dev_idx = table.device_index();
+
+    let desc = driver.get_description(session, dev_idx)?;
+    let mode = driver.get_onboard_mode(session, dev_idx)?;
+    let cur_prof = driver.get_current_profile(session, dev_idx)?;
+
+    let mode_str = match mode {
+        OnboardMode::Host => "host".to_string(),
+        OnboardMode::Onboard => "onboard".to_string(),
+        OnboardMode::Other(c) => format!("unknown(0x{c:02X})"),
+    };
+
+    // Read directory sector 0
+    let sector0 = driver.read_sector(session, dev_idx, 0, desc.sector_size, true)?;
+    let dir_entries = parse_profile_directory(&sector0, desc.profile_count)?;
+
+    let mut profiles = Vec::new();
+    for (idx, dir_entry) in dir_entries.iter().enumerate() {
+        let slot = (idx + 1) as u16;
+        let sector_data = driver.read_sector(
+            session,
+            dev_idx,
+            dir_entry.sector_address,
+            desc.sector_size,
+            true,
+        )?;
+        let parsed = parse_onboard_profile(slot, &sector_data)?;
+        profiles.push(OnboardProfileSlotReport {
+            slot,
+            sector_address: dir_entry.sector_address,
+            enabled: dir_entry.enabled,
+            is_active: mode == OnboardMode::Onboard && cur_prof == slot,
+            report_rate_hz: parsed.report_rate_hz,
+            default_dpi_stage: parsed.default_dpi_stage,
+            switched_dpi_stage: parsed.switched_dpi_stage,
+            dpi_stages: parsed.dpi_stages,
+            name: parsed.name,
+            crc_verified: true,
+        });
+    }
+
+    Ok(ProfilesListReport {
+        feature_version: driver.version(),
+        mode: mode_str,
+        current_profile: cur_prof,
+        profile_count: desc.profile_count,
+        sector_count: desc.sector_count,
+        sector_size: desc.sector_size,
+        profiles,
+    })
+}
+
+/// Dumps all onboard profile sectors (sector 0 and profiles 1..=profile_count) to a verified backup file.
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if reading or saving fails.
+pub fn execute_profile_backup<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    info: &HidDeviceInfo,
+    table: &FeatureTable,
+    custom_path: Option<&Path>,
+) -> Result<ProfileBackupReport, HidppError> {
+    let Some(entry) = table.get(FeatureId::ONBOARD_PROFILES) else {
+        return Err(ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::ONBOARD_PROFILES,
+        }
+        .into());
+    };
+    let driver = OnboardProfilesDriver::from_entry(entry)?;
+    let dev_idx = table.device_index();
+
+    let desc = driver.get_description(session, dev_idx)?;
+
+    // Read sector 0 (directory)
+    let sector0 = driver.read_sector(session, dev_idx, 0, desc.sector_size, true)?;
+    let mut sectors = BTreeMap::new();
+    sectors.insert(0, sector0);
+
+    // Read profile sectors (1..=profile_count)
+    for slot in 1..=u16::from(desc.profile_count) {
+        let sector_data = driver.read_sector(session, dev_idx, slot, desc.sector_size, true)?;
+        sectors.insert(slot, sector_data);
+    }
+
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let timestamp_str = format!("epoch_{secs}");
+
+    let backup = ProfileBackup::new(
+        timestamp_str.clone(),
+        info.vendor_id,
+        info.product_id,
+        desc.sector_size,
+        desc.sector_count,
+        sectors,
+    );
+
+    backup.verify_integrity().map_err(|e| {
+        HidppError::Protocol(ProtocolError::UnexpectedResponse {
+            detail: format!("backup integrity check failed: {e}"),
+        })
+    })?;
+
+    let backup_path = match custom_path {
+        Some(p) => p.to_path_buf(),
+        None => default_backup_path(info.vendor_id, info.product_id, &timestamp_str),
+    };
+
+    backup.save_to_file(&backup_path).map_err(|e| {
+        HidppError::Protocol(ProtocolError::UnexpectedResponse {
+            detail: format!("failed saving backup file: {e}"),
+        })
+    })?;
+
+    let total_bytes: usize = backup.sectors.values().map(Vec::len).sum();
+
+    Ok(ProfileBackupReport {
+        backup_path: backup_path.display().to_string(),
+        vendor_id: format!("0x{:04X}", info.vendor_id),
+        product_id: format!("0x{:04X}", info.product_id),
+        sectors_saved: backup.sectors.len(),
+        total_bytes,
+    })
+}
+
+/// Restores a verified profile backup into hardware memory sectors (`fn 6`, `fn 7`, `fn 8`).
+///
+/// In preview mode (`apply = false`), validates backup file and outputs planned writes without transmitting.
+/// In apply mode (`apply = true`), flashes each sector to device and performs readback CRC verification.
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if backup file is invalid, device VID:PID mismatches, or writing/verifying fails.
+pub fn execute_profile_restore<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    info: &HidDeviceInfo,
+    table: &FeatureTable,
+    backup_path: &Path,
+    apply: bool,
+) -> Result<ProfileRestoreReport, HidppError> {
+    let Some(entry) = table.get(FeatureId::ONBOARD_PROFILES) else {
+        return Err(ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::ONBOARD_PROFILES,
+        }
+        .into());
+    };
+    let driver = OnboardProfilesDriver::from_entry(entry)?;
+    let dev_idx = table.device_index();
+
+    let backup = ProfileBackup::load_from_file(backup_path).map_err(|e| {
+        HidppError::Protocol(ProtocolError::InvalidArgument {
+            detail: format!("failed loading backup {}: {e}", backup_path.display()),
+        })
+    })?;
+
+    if backup.vendor_id != info.vendor_id || backup.product_id != info.product_id {
+        return Err(HidppError::Protocol(ProtocolError::InvalidArgument {
+            detail: format!(
+                "backup device mismatch: file has 0x{:04X}:0x{:04X}, target device is 0x{:04X}:0x{:04X}",
+                backup.vendor_id, backup.product_id, info.vendor_id, info.product_id
+            ),
+        }));
+    }
+
+    let mut planned_writes = Vec::new();
+    let mut total_bytes = 0;
+
+    for (&sector, data) in &backup.sectors {
+        total_bytes += data.len();
+        planned_writes.push(PlannedWireFrame {
+            feature_id: "0x8100".to_string(),
+            feature_index: driver.feature_index().0,
+            function_id: 6,
+            params_hex: format!(
+                "{:04X}{:04X}{:04X} (sector 0x{sector:04X}, count {})",
+                sector,
+                0,
+                data.len(),
+                data.len()
+            ),
+        });
+    }
+
+    if apply {
+        // Automatic pre-flash safety backup before writing!
+        let _ = execute_profile_backup(session, info, table, None);
+
+        for (&sector, data) in &backup.sectors {
+            driver.write_sector(session, dev_idx, sector, data)?;
+            // Readback verify
+            let readback =
+                driver.read_sector(session, dev_idx, sector, backup.sector_size, true)?;
+            if readback != *data {
+                return Err(HidppError::Protocol(ProtocolError::UnexpectedResponse {
+                    detail: format!("post-write readback mismatch in sector 0x{sector:04X}"),
+                }));
+            }
+        }
+    }
+
+    Ok(ProfileRestoreReport {
+        applied: apply,
+        backup_path: backup_path.display().to_string(),
+        sectors_to_restore: backup.sectors.len(),
+        total_bytes,
+        planned_writes,
+        verified: apply,
+        note: if !apply {
+            Some(
+                "Dry run only: no sectors were written (use --apply to flash onboard memory)"
+                    .to_string(),
+            )
+        } else {
+            None
+        },
+    })
+}
+
+/// Switches the active onboard profile slot (`fn 3`) and verifies with readback (`fn 4`).
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if slot is invalid or readback mismatches.
+pub fn execute_set_active_profile<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    table: &FeatureTable,
+    slot: u16,
+    apply: bool,
+) -> Result<ProfileSetActiveReport, HidppError> {
+    if slot == 0 {
+        return Err(HidppError::Protocol(ProtocolError::InvalidArgument {
+            detail: "slot 0 is the directory sector; profile slots are 1-based (e.g. 1..=5)"
+                .to_string(),
+        }));
+    }
+
+    let Some(entry) = table.get(FeatureId::ONBOARD_PROFILES) else {
+        return Err(ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::ONBOARD_PROFILES,
+        }
+        .into());
+    };
+    let driver = OnboardProfilesDriver::from_entry(entry)?;
+    let dev_idx = table.device_index();
+
+    let desc = driver.get_description(session, dev_idx)?;
+    if slot > u16::from(desc.profile_count) {
+        return Err(HidppError::Protocol(ProtocolError::InvalidArgument {
+            detail: format!(
+                "requested slot {slot} exceeds device profile count ({})",
+                desc.profile_count
+            ),
+        }));
+    }
+
+    let prev_slot = driver.get_current_profile(session, dev_idx)?;
+
+    let planned_frame = PlannedWireFrame {
+        feature_id: "0x8100".to_string(),
+        feature_index: driver.feature_index().0,
+        function_id: 3,
+        params_hex: format!("{slot:04X}"),
+    };
+
+    let (readback_slot, verified) = if apply {
+        driver.set_current_profile(session, dev_idx, slot)?;
+        let rb = driver.get_current_profile(session, dev_idx)?;
+        let matches = rb == slot;
+        (Some(rb), matches)
+    } else {
+        (None, false)
+    };
+
+    Ok(ProfileSetActiveReport {
+        applied: apply,
+        requested_slot: slot,
+        previous_slot: prev_slot,
+        readback_slot,
+        verified,
+        planned_frame,
+        note: if !apply {
+            Some(
+                "Dry run only: no frames sent to device (use --apply to switch profile)"
+                    .to_string(),
+            )
+        } else {
+            None
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use hidpp::{
+        DeviceIndex, FeatureEntry, FeatureFlags, FeatureId, FeatureIndex, FunctionId,
+        HidDeviceInfo, HidppFrame, MockTransport, ReportId, SessionConfig, SwId,
+        calculate_sector_crc,
+    };
+
+    use super::*;
+
+    fn test_session(mock: MockTransport) -> HidppSession<MockTransport> {
+        let cfg = SessionConfig {
+            response_timeout: Duration::from_millis(50),
+            busy_initial_backoff: Duration::ZERO,
+            ..SessionConfig::default()
+        };
+        HidppSession::with_config(mock, cfg)
+    }
+
+    fn mock_table() -> FeatureTable {
+        use hidpp::ProtocolVersion;
+        let entries = vec![
+            FeatureEntry {
+                index: FeatureIndex(0),
+                id: FeatureId::IROOT,
+                version: 0,
+                flags: FeatureFlags::default(),
+            },
+            FeatureEntry {
+                index: FeatureIndex(1),
+                id: FeatureId::IFEATURE_SET,
+                version: 1,
+                flags: FeatureFlags::default(),
+            },
+            FeatureEntry {
+                index: FeatureIndex(12),
+                id: FeatureId::ONBOARD_PROFILES,
+                version: 0,
+                flags: FeatureFlags::default(),
+            },
+        ];
+        FeatureTable::from_entries(
+            DeviceIndex::DIRECT,
+            ProtocolVersion { major: 4, minor: 2 },
+            entries,
+        )
+    }
+
+    #[test]
+    fn test_set_active_profile_dry_run_and_apply() {
+        let table = mock_table();
+        let feat_idx = FeatureIndex(12);
+        let dev_idx = DeviceIndex::DIRECT;
+
+        let info = HidDeviceInfo::mock(0x046D, 0xC08B, "G502 HERO");
+        let mut mock = MockTransport::new(info);
+
+        // For dry-run: getDescription (fn 0), getCurrentProfile (fn 4)
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Long,
+                dev_idx,
+                feat_idx,
+                FunctionId::new(0).unwrap(),
+                SwId::DEFAULT_REQUEST,
+                &[
+                    0x01, 0x02, 0x01, 0x05, 0x05, 0x0B, 0x10, 0x00, 0xFF, 0x0A, 0x01, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            )
+            .unwrap(),
+        );
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Long,
+                dev_idx,
+                feat_idx,
+                FunctionId::new(4).unwrap(),
+                SwId::DEFAULT_REQUEST,
+                &[0x00, 0x01],
+            )
+            .unwrap(),
+        );
+
+        let mut session = test_session(mock);
+
+        let dry_report = execute_set_active_profile(&mut session, &table, 2, false).unwrap();
+        assert!(!dry_report.applied);
+        assert_eq!(dry_report.requested_slot, 2);
+        assert_eq!(dry_report.previous_slot, 1);
+        assert_eq!(dry_report.readback_slot, None);
+        assert!(!dry_report.verified);
+
+        // Slot 0 rejected
+        assert!(execute_set_active_profile(&mut session, &table, 0, false).is_err());
+    }
+
+    #[test]
+    fn test_profile_backup_and_restore_cycle() {
+        let table = mock_table();
+        let feat_idx = FeatureIndex(12);
+        let dev_idx = DeviceIndex::DIRECT;
+        let info = HidDeviceInfo::mock(0x046D, 0xC08B, "G502 HERO");
+
+        let mut mock = MockTransport::new(info.clone());
+
+        // 1. fn 0: getDescription
+        mock.push_frame(
+            HidppFrame::new(
+                ReportId::Long,
+                dev_idx,
+                feat_idx,
+                FunctionId::new(0).unwrap(),
+                SwId::DEFAULT_REQUEST,
+                &[
+                    0x01, 0x02, 0x01, 0x01, 0x01, 0x0B, 0x02, 0x00, 0xFF, 0x0A, 0x01, 0x00, 0x00,
+                    0x00, 0x00, 0x00,
+                ],
+            )
+            .unwrap(),
+        );
+
+        // 2. read sector 0 (16 chunks of 16 bytes for 255-byte sector)
+        let mut s0 = vec![0xFF; 255];
+        s0[0..4].copy_from_slice(&[0x00, 0x01, 0x01, 0xFF]);
+        let crc0 = calculate_sector_crc(&s0[..253]);
+        s0[253..255].copy_from_slice(&crc0.to_be_bytes());
+
+        for chunk_idx in 0..16 {
+            let offset = (chunk_idx * 16).min(239);
+            mock.push_frame(
+                HidppFrame::new(
+                    ReportId::Long,
+                    dev_idx,
+                    feat_idx,
+                    FunctionId::new(5).unwrap(),
+                    SwId::DEFAULT_REQUEST,
+                    &s0[offset..offset + 16],
+                )
+                .unwrap(),
+            );
+        }
+
+        // 3. read sector 1 (16 chunks of 16 bytes)
+        let mut s1 = vec![0xFF; 255];
+        s1[0] = 1; // 1000 Hz
+        s1[1] = 0; // default DPI stage 0
+        let crc1 = calculate_sector_crc(&s1[..253]);
+        s1[253..255].copy_from_slice(&crc1.to_be_bytes());
+
+        for chunk_idx in 0..16 {
+            let offset = (chunk_idx * 16).min(239);
+            mock.push_frame(
+                HidppFrame::new(
+                    ReportId::Long,
+                    dev_idx,
+                    feat_idx,
+                    FunctionId::new(5).unwrap(),
+                    SwId::DEFAULT_REQUEST,
+                    &s1[offset..offset + 16],
+                )
+                .unwrap(),
+            );
+        }
+
+        let mut session = test_session(mock);
+
+        let temp_dir = std::env::temp_dir().join(format!("squeak_test_{}", std::process::id()));
+        let backup_file = temp_dir.join("test_backup.json");
+
+        let backup_report =
+            execute_profile_backup(&mut session, &info, &table, Some(&backup_file)).unwrap();
+        assert_eq!(backup_report.sectors_saved, 2);
+        assert!(backup_file.exists());
+
+        // Test restore dry-run
+        let restore_report =
+            execute_profile_restore(&mut session, &info, &table, &backup_file, false).unwrap();
+        assert!(!restore_report.applied);
+        assert_eq!(restore_report.sectors_to_restore, 2);
+        assert!(!restore_report.verified);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }
