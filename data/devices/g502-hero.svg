@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 520" width="320" height="520">
+  <title>G502 HERO</title>
+  <!-- Mouse Body Shell -->
+  <path id="body-shell"
+        d="M 160 28 C 218 28, 256 64, 260 132 L 264 252 C 268 358, 246 476, 168 486 C 102 494, 72 418, 66 336 C 58 296, 34 278, 34 236 C 34 198, 60 184, 62 128 C 66 64, 102 28, 160 28 Z"
+        fill="#242933" stroke="#5c667a" stroke-width="3" />
+  <!-- Thumb Rest Wing -->
+  <path id="thumb-wing"
+        d="M 64 202 C 42 208, 32 224, 34 246 C 36 272, 54 288, 68 310 L 72 206 Z"
+        fill="#1b1f27" stroke="#4a5366" stroke-width="2" />
+
+  <!-- Left Click (Primary) -->
+  <path id="btn-left" class="squeak-btn"
+        d="M 88 52 C 110 38, 136 34, 154 34 L 154 196 L 76 196 C 72 136, 74 80, 88 52 Z"
+        fill="#2f3644" stroke="#6d788f" stroke-width="2" />
+
+  <!-- Right Click (Secondary) -->
+  <path id="btn-right" class="squeak-btn"
+        d="M 166 34 C 188 34, 214 38, 234 52 C 248 80, 252 136, 248 196 L 166 196 Z"
+        fill="#2f3644" stroke="#6d788f" stroke-width="2" />
+
+  <!-- G8 (DPI Up) on outer edge of Left Click -->
+  <path id="btn-g8" class="squeak-btn"
+        d="M 66 84 L 82 80 L 80 124 L 64 128 Z"
+        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+
+  <!-- G7 (DPI Down) below G8 -->
+  <path id="btn-g7" class="squeak-btn"
+        d="M 64 134 L 80 130 L 78 174 L 62 178 Z"
+        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+
+  <!-- Scroll Wheel Housing -->
+  <rect x="144" y="72" width="32" height="76" rx="10" fill="#161920" stroke="#4f586b" stroke-width="2" />
+  <!-- Middle Click -->
+  <rect id="btn-middle" class="squeak-btn" x="150" y="80" width="20" height="60" rx="6"
+        fill="#444e63" stroke="#8c99b2" stroke-width="1.8" />
+  <!-- Scroll Left Tilt -->
+  <path id="btn-scroll-left" class="squeak-btn"
+        d="M 134 94 L 146 94 L 146 126 L 134 126 L 128 110 Z"
+        fill="#353d4d" stroke="#7d8aa3" stroke-width="1.5" />
+  <!-- Scroll Right Tilt -->
+  <path id="btn-scroll-right" class="squeak-btn"
+        d="M 174 94 L 186 94 L 192 110 L 186 126 L 174 126 Z"
+        fill="#353d4d" stroke="#7d8aa3" stroke-width="1.5" />
+
+  <!-- G9 (Profile Cycle) behind Scroll Wheel -->
+  <rect id="btn-g9" class="squeak-btn" x="148" y="182" width="24" height="30" rx="5"
+        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+
+  <!-- Thumb Cluster: Forward (G5), Back (G4), Sniper (DPI Shift) -->
+  <path id="btn-forward" class="squeak-btn"
+        d="M 52 190 L 68 184 L 72 222 L 54 226 Z"
+        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+  <path id="btn-back" class="squeak-btn"
+        d="M 54 232 L 72 228 L 74 268 L 56 272 Z"
+        fill="#3a4354" stroke="#7d8aa3" stroke-width="1.8" />
+  <path id="btn-dpi-shift" class="squeak-btn"
+        d="M 38 228 L 50 228 L 52 264 L 38 260 Z"
+        fill="#4a556b" stroke="#99a8c4" stroke-width="1.8" />
+
+  <!-- Decorative LED Zones -->
+  <g id="led-dpi" fill="#3584e4">
+    <rect x="82" y="218" width="14" height="5" rx="2" />
+    <rect x="82" y="227" width="14" height="5" rx="2" />
+    <rect x="82" y="236" width="14" height="5" rx="2" />
+  </g>
+  <circle id="led-logo" cx="164" cy="364" r="18" fill="none" stroke="#3584e4" stroke-width="4" />
+</svg>

@@ -561,6 +561,21 @@ pub fn extract_svg_ids(svg: &str) -> HashSet<String> {
     ids
 }
 
+/// Built-in SVG diagram for the Logitech G502 HERO.
+pub const BUILTIN_G502_HERO_SVG: &str = include_str!("../../../data/devices/g502-hero.svg");
+
+/// Built-in generic 5-button mouse SVG fallback diagram.
+pub const BUILTIN_GENERIC_MOUSE_SVG: &str = include_str!("../../../data/devices/generic-mouse.svg");
+
+/// Returns the built-in SVG diagram matching `svg_name`, or falls back to [`BUILTIN_GENERIC_MOUSE_SVG`].
+#[must_use]
+pub fn resolve_builtin_svg(svg_name: Option<&str>) -> &'static str {
+    match svg_name {
+        Some("g502-hero.svg") => BUILTIN_G502_HERO_SVG,
+        _ => BUILTIN_GENERIC_MOUSE_SVG,
+    }
+}
+
 /// Convenience map from button CID to human label for quick lookup.
 #[must_use]
 pub fn button_label_map(def: &DeviceDefinition) -> BTreeMap<u16, &str> {

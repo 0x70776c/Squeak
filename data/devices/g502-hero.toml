@@ -13,7 +13,7 @@ name = "G502 HERO"
 vendor_id = 0x046d
 product_ids = [0xc08b]
 kind = "mouse"
-# svg = "g502-hero.svg" # Deferred until M7 GUI; falls back to generic mouse diagram
+svg = "g502-hero.svg"
 
 [[buttons]]
 cid = 0x0050

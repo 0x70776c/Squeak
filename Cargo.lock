@@ -812,7 +812,13 @@ dependencies = [
 name = "squeak-gui"
 version = "0.1.0"
 dependencies = [
+ "futures-lite",
+ "serde",
+ "serde_json",
  "squeak-core",
+ "tokio",
+ "tracing",
+ "zbus",
 ]
 
 [[package]]

@@ -144,6 +144,190 @@ impl<B: DeviceBackend> SqueakDaemonInterface<B> {
         }
     }
 
+    /// Reads RGB LED zone configuration (`0x8070`) as JSON `LedConfigReport`.
+    async fn get_led_config(&self, device_key: &str) -> zbus::fdo::Result<String> {
+        let report = {
+            let mut guard = self.registry.lock().await;
+            guard.get_led_config(device_key)
+        }?;
+        serde_json::to_string_pretty(&report)
+            .map_err(DaemonError::Json)
+            .map_err(Into::into)
+    }
+
+    /// Validates and previews (`dry_run = true`) or applies (`dry_run = false`) an LED effect.
+    #[allow(clippy::too_many_arguments)]
+    async fn set_led_effect(
+        &self,
+        device_key: &str,
+        zone_index: u8,
+        effect: &str,
+        color_hex: &str,
+        period_ms: u16,
+        brightness_pct: u8,
+        dry_run: bool,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<String> {
+        let color_opt = if color_hex.trim().is_empty() {
+            None
+        } else {
+            Some(color_hex)
+        };
+        let period_opt = if period_ms == 0 {
+            None
+        } else {
+            Some(period_ms)
+        };
+        let bright_opt = if brightness_pct == 0 {
+            None
+        } else {
+            Some(brightness_pct)
+        };
+        let res = {
+            let mut guard = self.registry.lock().await;
+            guard.set_led_effect(
+                device_key, zone_index, effect, color_opt, period_opt, bright_opt, dry_run,
+            )
+        };
+        match res {
+            Ok(report) => {
+                if report.applied && report.verified {
+                    let setting = format!("led:{zone_index}={effect}");
+                    let _ = Self::device_settings_applied(&emitter, device_key, &setting).await;
+                }
+                serde_json::to_string_pretty(&report)
+                    .map_err(DaemonError::Json)
+                    .map_err(Into::into)
+            }
+            Err(err) => {
+                let _ = Self::device_error(&emitter, device_key, &err.to_string()).await;
+                Err(err.into())
+            }
+        }
+    }
+
+    /// Reads onboard/host operating mode (`0x8100`) as JSON `OnboardModeReport`.
+    async fn get_onboard_mode(&self, device_key: &str) -> zbus::fdo::Result<String> {
+        let report = {
+            let mut guard = self.registry.lock().await;
+            guard.get_onboard_mode(device_key)
+        }?;
+        serde_json::to_string_pretty(&report)
+            .map_err(DaemonError::Json)
+            .map_err(Into::into)
+    }
+
+    /// Switches operating mode (`"host"` or `"onboard"`) via `0x8100`.
+    async fn set_onboard_mode(
+        &self,
+        device_key: &str,
+        mode: &str,
+        dry_run: bool,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<String> {
+        let res = {
+            let mut guard = self.registry.lock().await;
+            guard.set_onboard_mode(device_key, mode, dry_run)
+        };
+        match res {
+            Ok(report) => {
+                if report.applied && report.verified {
+                    let setting = format!("onboard_mode={mode}");
+                    let _ = Self::device_settings_applied(&emitter, device_key, &setting).await;
+                }
+                serde_json::to_string_pretty(&report)
+                    .map_err(DaemonError::Json)
+                    .map_err(Into::into)
+            }
+            Err(err) => {
+                let _ = Self::device_error(&emitter, device_key, &err.to_string()).await;
+                Err(err.into())
+            }
+        }
+    }
+
+    /// Lists onboard profiles (`0x8100`) as JSON `ProfilesListReport`.
+    async fn list_profiles(&self, device_key: &str) -> zbus::fdo::Result<String> {
+        let report = {
+            let mut guard = self.registry.lock().await;
+            guard.list_profiles(device_key)
+        }?;
+        serde_json::to_string_pretty(&report)
+            .map_err(DaemonError::Json)
+            .map_err(Into::into)
+    }
+
+    /// Switches active onboard profile slot (`0x8100`) as JSON `ProfileSetActiveReport`.
+    async fn set_active_profile(
+        &self,
+        device_key: &str,
+        slot: u16,
+        dry_run: bool,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<String> {
+        let res = {
+            let mut guard = self.registry.lock().await;
+            guard.set_active_profile(device_key, slot, dry_run)
+        };
+        match res {
+            Ok(report) => {
+                if report.applied && report.verified {
+                    let setting = format!("profile_slot={slot}");
+                    let _ = Self::device_settings_applied(&emitter, device_key, &setting).await;
+                }
+                serde_json::to_string_pretty(&report)
+                    .map_err(DaemonError::Json)
+                    .map_err(Into::into)
+            }
+            Err(err) => {
+                let _ = Self::device_error(&emitter, device_key, &err.to_string()).await;
+                Err(err.into())
+            }
+        }
+    }
+
+    /// Backs up onboard profile memory (`0x8100`) to default or specified path as JSON `ProfileBackupReport`.
+    async fn backup_profiles(
+        &self,
+        device_key: &str,
+        output_path: &str,
+    ) -> zbus::fdo::Result<String> {
+        let path_opt = if output_path.trim().is_empty() {
+            None
+        } else {
+            Some(std::path::Path::new(output_path))
+        };
+        let report = {
+            let mut guard = self.registry.lock().await;
+            guard.backup_profiles(device_key, path_opt)
+        }?;
+        serde_json::to_string_pretty(&report)
+            .map_err(DaemonError::Json)
+            .map_err(Into::into)
+    }
+
+    /// Reads button capabilities and SVG layout metadata as JSON `ButtonsReport`.
+    async fn get_buttons(&self, device_key: &str) -> zbus::fdo::Result<String> {
+        let report = {
+            let mut guard = self.registry.lock().await;
+            guard.get_buttons(device_key)
+        }?;
+        serde_json::to_string_pretty(&report)
+            .map_err(DaemonError::Json)
+            .map_err(Into::into)
+    }
+
+    /// Reads scroll wheel capabilities and settings as JSON `ScrollConfigReport`.
+    async fn get_scroll_config(&self, device_key: &str) -> zbus::fdo::Result<String> {
+        let report = {
+            let mut guard = self.registry.lock().await;
+            guard.get_scroll_config(device_key)
+        }?;
+        serde_json::to_string_pretty(&report)
+            .map_err(DaemonError::Json)
+            .map_err(Into::into)
+    }
+
     /// Re-scans endpoints, updates registry, and emits `DevicesChanged` when endpoints change.
     async fn refresh_devices(
         &self,

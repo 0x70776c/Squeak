@@ -544,6 +544,55 @@ pub struct DaemonDeviceSummary {
     pub hint: Option<String>,
 }
 
+/// Single button entry combining device TOML metadata with runtime HID++ capabilities.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ButtonEntryReport {
+    /// 16-bit Control ID (`0x0050` etc.).
+    pub cid: u16,
+    /// Human-readable label (from device TOML or fallback).
+    pub label: String,
+    /// Optional SVG element id (e.g. `"btn-left"`).
+    pub svg_id: Option<String>,
+    /// Whether `0x1B04` reports this control as remappable.
+    pub remappable: bool,
+    /// Currently mapped target CID if `0x1B04` is supported, otherwise `None`.
+    pub mapped_cid: Option<u16>,
+}
+
+/// Button capability & layout report for a device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ButtonsReport {
+    /// Optional SVG filename from the device TOML (e.g. `"g502-hero.svg"`).
+    pub svg: Option<String>,
+    /// `true` if `REPROG_CONTROLS_V4` (`0x1B04`) is supported.
+    pub supports_reprog_v4: bool,
+    /// `true` if `MOUSE_BUTTON_SPY` (`0x8110`) is supported.
+    pub supports_button_spy: bool,
+    /// `true` if `ONBOARD_PROFILES` (`0x8100`) is supported.
+    pub supports_onboard_profiles: bool,
+    /// Enumerated buttons.
+    pub buttons: Vec<ButtonEntryReport>,
+}
+
+/// Scroll wheel capability & status report (`0x2110` SmartShift / `0x2121` HiRes Wheel).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScrollConfigReport {
+    /// `true` if `SMART_SHIFT` (`0x2110`) is present.
+    pub smart_shift_supported: bool,
+    /// Current SmartShift mode (`"ratchet"` or `"freespin"`), if present.
+    pub smart_shift_mode: Option<String>,
+    /// Auto-disengage threshold (0..=255), if present.
+    pub auto_disengage: Option<u8>,
+    /// `true` if `HIRES_WHEEL` (`0x2121`) is present.
+    pub hires_wheel_supported: bool,
+    /// Hi-res multiplier reported by `0x2121`, if present.
+    pub hires_multiplier: Option<u8>,
+    /// Current wheel resolution mode (`"hires"` or `"lowres"`), if present.
+    pub wheel_resolution_mode: Option<String>,
+    /// Whether wheel events are inverted (`0x2121`), if present.
+    pub invert: Option<bool>,
+}
+
 #[cfg(test)]
 mod tests {
     use hidpp::{

@@ -2,15 +2,20 @@
 //! re-apply orchestration for `squeakd`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use hidpp::{
-    DeviceIndex, FeatureCache, HidDeviceInfo, HidTransport, HidppError, HidppSession,
+    DeviceIndex, FeatureCache, FeatureId, HidDeviceInfo, HidTransport, HidppError, HidppSession,
     HidrawTransport, ProtocolError, TransportError, discover_hidpp_devices,
 };
 use squeak_core::{
-    DaemonDeviceSummary, DefinitionMatchKind, DeviceDatabase, DeviceDump, DeviceStatusReport,
-    DpiWriteReport, ProbeStatus, ReportRateWriteReport, execute_dpi_write,
-    execute_report_rate_write, read_device_status,
+    ButtonsReport, DaemonDeviceSummary, DefinitionMatchKind, DeviceDatabase, DeviceDump,
+    DeviceStatusReport, DpiWriteReport, LedConfigReport, LedWriteReport, OnboardModeReport,
+    OnboardModeWriteReport, ProbeStatus, ProfileBackupReport, ProfileSetActiveReport,
+    ProfilesListReport, ReportRateWriteReport, ScrollConfigReport, execute_dpi_write,
+    execute_host_mode_write, execute_led_write, execute_profile_backup, execute_report_rate_write,
+    execute_set_active_profile, parse_led_effect_spec, read_buttons_report, read_device_status,
+    read_led_config, read_onboard_mode, read_profiles_summary, read_scroll_config,
 };
 use tracing::{debug, info, warn};
 
@@ -438,6 +443,187 @@ impl<B: DeviceBackend> DeviceRegistry<B> {
             self.desired_by_sig.entry(sig).or_default().report_rate_hz = Some(hz);
         }
         Ok(report)
+    }
+
+    fn with_ready_session<R>(
+        &mut self,
+        selector: &str,
+        op: impl FnOnce(
+            &mut HidppSession<B::Transport>,
+            &hidpp::FeatureTable,
+            &HidDeviceInfo,
+            &DeviceDatabase,
+        ) -> Result<R, HidppError>,
+    ) -> Result<R, DaemonError> {
+        let key = self.resolve_selector(selector)?;
+        self.ensure_ready(&key)?;
+        let dev = self
+            .devices
+            .get_mut(&key)
+            .ok_or_else(|| DaemonError::DeviceNotFound(selector.to_owned()))?;
+        let table = dev
+            .cache
+            .get(dev.device_index)
+            .ok_or_else(|| {
+                DaemonError::InvalidArgument(format!("device {key} feature table not ready"))
+            })?
+            .clone();
+        let session = dev.session.as_mut().ok_or_else(|| {
+            DaemonError::InvalidArgument(format!("device {key} session not open"))
+        })?;
+        let res = op(session, &table, &dev.info, &self.db);
+        if matches!(
+            res,
+            Err(HidppError::Transport(
+                TransportError::Io { .. } | TransportError::Disconnected
+            ))
+        ) {
+            dev.cache.invalidate_all();
+            dev.session = None;
+        }
+        res.map_err(DaemonError::from)
+    }
+
+    /// Reads RGB LED zone configuration (`0x8070`) for `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if `0x8070` is unsupported or device communication fails.
+    pub fn get_led_config(&mut self, selector: &str) -> Result<LedConfigReport, DaemonError> {
+        self.with_ready_session(selector, |session, table, _, _| {
+            read_led_config(session, table)?.ok_or(HidppError::Protocol(
+                ProtocolError::FeatureNotSupported {
+                    feature_id: FeatureId::COLOR_LED_EFFECTS,
+                },
+            ))
+        })
+    }
+
+    /// Previews or applies an RGB LED effect (`0x8070`) on `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if parameters are invalid or `0x8070` fails.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_led_effect(
+        &mut self,
+        selector: &str,
+        zone_index: u8,
+        effect: &str,
+        color_hex: Option<&str>,
+        period_ms: Option<u16>,
+        brightness_pct: Option<u8>,
+        dry_run: bool,
+    ) -> Result<LedWriteReport, DaemonError> {
+        let parsed = parse_led_effect_spec(effect, color_hex, period_ms, brightness_pct)
+            .map_err(|e| DaemonError::InvalidArgument(e.to_string()))?;
+        self.with_ready_session(selector, |session, table, _, _| {
+            execute_led_write(session, table, zone_index, parsed, !dry_run)
+        })
+    }
+
+    /// Reads onboard/host operating mode (`0x8100`) for `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if `0x8100` is unsupported or device communication fails.
+    pub fn get_onboard_mode(&mut self, selector: &str) -> Result<OnboardModeReport, DaemonError> {
+        self.with_ready_session(selector, |session, table, _, _| {
+            read_onboard_mode(session, table)?.ok_or(HidppError::Protocol(
+                ProtocolError::FeatureNotSupported {
+                    feature_id: FeatureId::ONBOARD_PROFILES,
+                },
+            ))
+        })
+    }
+
+    /// Switches onboard/host operating mode (`0x8100`) on `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if `mode` is invalid or `0x8100` fails.
+    pub fn set_onboard_mode(
+        &mut self,
+        selector: &str,
+        mode: &str,
+        dry_run: bool,
+    ) -> Result<OnboardModeWriteReport, DaemonError> {
+        let target_host_mode = match mode.trim().to_ascii_lowercase().as_str() {
+            "host" | "software" => true,
+            "onboard" | "memory" | "hardware" => false,
+            other => {
+                return Err(DaemonError::InvalidArgument(format!(
+                    "invalid onboard mode '{other}' (expected 'host' or 'onboard')"
+                )));
+            }
+        };
+        self.with_ready_session(selector, |session, table, _, _| {
+            execute_host_mode_write(session, table, target_host_mode, !dry_run)
+        })
+    }
+
+    /// Lists onboard profiles (`0x8100`) for `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if `0x8100` is unsupported or reading sectors fails.
+    pub fn list_profiles(&mut self, selector: &str) -> Result<ProfilesListReport, DaemonError> {
+        self.with_ready_session(selector, |session, table, _, _| {
+            read_profiles_summary(session, table)
+        })
+    }
+
+    /// Switches active onboard profile slot (`0x8100`) on `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if slot is out of range or readback fails.
+    pub fn set_active_profile(
+        &mut self,
+        selector: &str,
+        slot: u16,
+        dry_run: bool,
+    ) -> Result<ProfileSetActiveReport, DaemonError> {
+        self.with_ready_session(selector, |session, table, _, _| {
+            execute_set_active_profile(session, table, slot, !dry_run)
+        })
+    }
+
+    /// Backs up onboard profile memory sectors (`0x8100`) for `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if reading sectors or writing the backup file fails.
+    pub fn backup_profiles(
+        &mut self,
+        selector: &str,
+        output_path: Option<&Path>,
+    ) -> Result<ProfileBackupReport, DaemonError> {
+        self.with_ready_session(selector, |session, table, info, _| {
+            execute_profile_backup(session, info, table, output_path)
+        })
+    }
+
+    /// Reads button capabilities and SVG layout metadata for `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if `selector` cannot be resolved or device discovery failed.
+    pub fn get_buttons(&mut self, selector: &str) -> Result<ButtonsReport, DaemonError> {
+        self.with_ready_session(selector, |session, table, info, db| {
+            Ok(read_buttons_report(session, info, table, db))
+        })
+    }
+
+    /// Reads scroll wheel (`0x2110` / `0x2121`) capabilities and status for `selector`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DaemonError`] if `selector` cannot be resolved or device discovery failed.
+    pub fn get_scroll_config(&mut self, selector: &str) -> Result<ScrollConfigReport, DaemonError> {
+        self.with_ready_session(selector, |session, table, _, _| {
+            Ok(read_scroll_config(session, table))
+        })
     }
 
     fn resolve_selector(&self, selector: &str) -> Result<String, DaemonError> {

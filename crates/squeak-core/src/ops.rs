@@ -10,20 +10,22 @@ use hidpp::{
     AdjustableDpiDriver, AdjustableDpiFeature, ColorLedEffectsDriver, DeviceIndex,
     DeviceNameDriver, DeviceNameFeature, Dpi, DpiCapabilities, ExtendedReportRateDriver, FeatureId,
     FeatureTable, FirmwareInfoDriver, FirmwareInfoFeature, HidDeviceInfo, HidTransport, HidppError,
-    HidppFeature, HidppSession, LedEffect, LedEffectId, OnboardMode, OnboardProfilesDriver,
-    ProtocolError, ReportRate, ReportRateDriver, parse_onboard_profile, parse_profile_directory,
+    HidppFeature, HidppSession, HiresWheelDriver, LedEffect, LedEffectId, OnboardMode,
+    OnboardProfilesDriver, ProtocolError, ReportRate, ReportRateDriver, ReprogControlsV4Driver,
+    RgbColor, SmartShiftDriver, SmartShiftMode, parse_onboard_profile, parse_profile_directory,
     read_battery, read_report_rate, set_report_rate_verified,
 };
 
-use crate::device_data::DeviceDatabase;
+use crate::device_data::{DeviceDatabase, ResolvedDevice};
 use crate::dump::DeviceDump;
 use crate::profile_backup::{ProfileBackup, default_backup_path};
 use crate::settings::{
-    BatteryStatusReport, DeviceNameReport, DeviceStatusReport, DpiConfigReport, DpiWriteReport,
-    FirmwareSummaryReport, LedConfigReport, LedWriteReport, LedZoneStatusReport, OnboardModeReport,
-    OnboardModeWriteReport, OnboardProfileSlotReport, PlannedWireFrame, ProfileBackupReport,
-    ProfileRestoreReport, ProfileSetActiveReport, ProfilesListReport, ReportRateConfigReport,
-    ReportRateWriteReport, SensorDpiReport,
+    BatteryStatusReport, ButtonEntryReport, ButtonsReport, DeviceNameReport, DeviceStatusReport,
+    DpiConfigReport, DpiWriteReport, FirmwareSummaryReport, LedConfigReport, LedWriteReport,
+    LedZoneStatusReport, OnboardModeReport, OnboardModeWriteReport, OnboardProfileSlotReport,
+    PlannedWireFrame, ProfileBackupReport, ProfileRestoreReport, ProfileSetActiveReport,
+    ProfilesListReport, ReportRateConfigReport, ReportRateWriteReport, ScrollConfigReport,
+    SensorDpiReport,
 };
 
 const FN_DPI_SET: u8 = 3;
@@ -1017,6 +1019,184 @@ pub fn execute_set_active_profile<T: HidTransport>(
             None
         },
     })
+}
+
+fn parse_hex_color_rgb(hex: &str) -> Result<RgbColor, ProtocolError> {
+    let clean = hex.trim().trim_start_matches('#');
+    if clean.len() != 6 || !clean.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(ProtocolError::InvalidArgument {
+            detail: format!("invalid RGB hex color '{hex}' (expected #RRGGBB)"),
+        });
+    }
+    let r = u8::from_str_radix(&clean[0..2], 16).map_err(|_| ProtocolError::InvalidArgument {
+        detail: format!("invalid red channel in '{hex}'"),
+    })?;
+    let g = u8::from_str_radix(&clean[2..4], 16).map_err(|_| ProtocolError::InvalidArgument {
+        detail: format!("invalid green channel in '{hex}'"),
+    })?;
+    let b = u8::from_str_radix(&clean[4..6], 16).map_err(|_| ProtocolError::InvalidArgument {
+        detail: format!("invalid blue channel in '{hex}'"),
+    })?;
+    Ok(RgbColor::new(r, g, b))
+}
+
+/// Parses an effect name (`"off"`, `"static"`, `"breathing"`, `"cycle"`) and optional parameters
+/// into a validated [`LedEffect`].
+///
+/// # Errors
+///
+/// Returns [`ProtocolError::InvalidArgument`] if the effect name or `#RRGGBB` color is invalid.
+pub fn parse_led_effect_spec(
+    effect: &str,
+    color_hex: Option<&str>,
+    period_ms: Option<u16>,
+    brightness_pct: Option<u8>,
+) -> Result<LedEffect, ProtocolError> {
+    match effect.trim().to_ascii_lowercase().as_str() {
+        "off" => Ok(LedEffect::Off),
+        "static" => {
+            let color_str = color_hex.ok_or_else(|| ProtocolError::InvalidArgument {
+                detail: "static effect requires color (#RRGGBB)".to_owned(),
+            })?;
+            let color = parse_hex_color_rgb(color_str)?;
+            Ok(LedEffect::Static { color })
+        }
+        "breathing" => {
+            let color_str = color_hex.ok_or_else(|| ProtocolError::InvalidArgument {
+                detail: "breathing effect requires color (#RRGGBB)".to_owned(),
+            })?;
+            let color = parse_hex_color_rgb(color_str)?;
+            Ok(LedEffect::Breathing {
+                color,
+                period_ms: period_ms.unwrap_or(2000),
+                brightness_pct: brightness_pct.unwrap_or(100),
+            })
+        }
+        "cycle" | "color-cycle" | "color_cycle" => Ok(LedEffect::ColorCycle {
+            period_ms: period_ms.unwrap_or(4000),
+            brightness_pct: brightness_pct.unwrap_or(100),
+        }),
+        other => Err(ProtocolError::InvalidArgument {
+            detail: format!(
+                "unsupported LED effect '{other}' (expected 'off', 'static', 'breathing', or 'cycle')"
+            ),
+        }),
+    }
+}
+
+/// Reads button capabilities and layout metadata from `0x1B04` (`REPROG_CONTROLS_V4`) + device TOML.
+#[must_use]
+pub fn read_buttons_report<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    info: &HidDeviceInfo,
+    table: &FeatureTable,
+    db: &DeviceDatabase,
+) -> ButtonsReport {
+    let resolved = db.resolve(info.vendor_id, info.product_id);
+    let (svg, toml_buttons) = match resolved {
+        ResolvedDevice::Known(def) => (def.svg.clone(), def.buttons.as_slice()),
+        ResolvedDevice::Generic => (None, &[][..]),
+    };
+    let supports_reprog_v4 = table.get(FeatureId::REPROG_CONTROLS_V4).is_some();
+    let supports_button_spy = table.get(FeatureId::MOUSE_BUTTON_SPY).is_some();
+    let supports_onboard_profiles = table.get(FeatureId::ONBOARD_PROFILES).is_some();
+
+    let mut buttons = Vec::new();
+    if let Some(entry) = table.get(FeatureId::REPROG_CONTROLS_V4)
+        && let Ok(driver) = ReprogControlsV4Driver::from_entry(entry)
+        && let Ok(count) = driver.get_control_count(session, table.device_index())
+    {
+        for idx in 0..count {
+            if let Ok(ctrl) = driver.get_control_info(session, table.device_index(), idx) {
+                let toml_btn = toml_buttons.iter().find(|b| b.cid == ctrl.cid.0);
+                let label = toml_btn
+                    .map(|b| b.label.clone())
+                    .unwrap_or_else(|| format!("Button 0x{:04X}", ctrl.cid.0));
+                let svg_id = toml_btn.and_then(|b| b.svg_id.clone());
+                let mapped_cid = driver
+                    .get_control_reporting(session, table.device_index(), idx)
+                    .ok()
+                    .map(|r| r.remapped_cid.0);
+                buttons.push(ButtonEntryReport {
+                    cid: ctrl.cid.0,
+                    label,
+                    svg_id,
+                    remappable: (ctrl.flags & 0x10) != 0,
+                    mapped_cid,
+                });
+            }
+        }
+    } else {
+        for b in toml_buttons {
+            buttons.push(ButtonEntryReport {
+                cid: b.cid,
+                label: b.label.clone(),
+                svg_id: b.svg_id.clone(),
+                remappable: false,
+                mapped_cid: None,
+            });
+        }
+    }
+
+    ButtonsReport {
+        svg,
+        supports_reprog_v4,
+        supports_button_spy,
+        supports_onboard_profiles,
+        buttons,
+    }
+}
+
+/// Reads scroll wheel configuration from `0x2110` (`SMART_SHIFT`) and `0x2121` (`HIRES_WHEEL`).
+#[must_use]
+pub fn read_scroll_config<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    table: &FeatureTable,
+) -> ScrollConfigReport {
+    let dev_idx = table.device_index();
+    let mut report = ScrollConfigReport {
+        smart_shift_supported: false,
+        smart_shift_mode: None,
+        auto_disengage: None,
+        hires_wheel_supported: false,
+        hires_multiplier: None,
+        wheel_resolution_mode: None,
+        invert: None,
+    };
+
+    if let Some(entry) = table.get(FeatureId::SMART_SHIFT)
+        && let Ok(driver) = SmartShiftDriver::from_entry(entry)
+    {
+        report.smart_shift_supported = true;
+        if let Ok(status) = driver.get_status(session, dev_idx) {
+            report.smart_shift_mode = Some(match status.mode {
+                SmartShiftMode::Auto => "auto".to_owned(),
+                SmartShiftMode::AlwaysFreespin => "freespin".to_owned(),
+                SmartShiftMode::AlwaysRatchet => "ratchet".to_owned(),
+                SmartShiftMode::Other(v) => format!("0x{v:02X}"),
+            });
+            report.auto_disengage = Some(status.threshold);
+        }
+    }
+
+    if let Some(entry) = table.get(FeatureId::HIRES_WHEEL)
+        && let Ok(driver) = HiresWheelDriver::from_entry(entry)
+    {
+        report.hires_wheel_supported = true;
+        if let Ok(cap) = driver.get_wheel_capability(session, dev_idx) {
+            report.hires_multiplier = Some(cap.multiplier);
+        }
+        if let Ok(mode) = driver.get_wheel_mode(session, dev_idx) {
+            report.wheel_resolution_mode = Some(if mode.hires_enabled {
+                "hires".to_owned()
+            } else {
+                "lowres".to_owned()
+            });
+            report.invert = Some(mode.inverted);
+        }
+    }
+
+    report
 }
 
 #[cfg(test)]
