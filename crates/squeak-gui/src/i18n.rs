@@ -1,19 +1,25 @@
 //! Internationalization (`i18n`) support for `squeak-gui` (English & German).
 //!
-//! Uses `LC_ALL` / `LC_MESSAGES` / `LANG` detection with a built-in translation table
-//! so both uninstalled dev builds and distro-packaged builds render localized strings.
+//! Uses `LC_ALL` / `LC_MESSAGES` / `LANG` detection as the initial default and supports
+//! live runtime switching between English and German in the GUI.
+
+use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Supported UI locales.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Locale {
-    /// English (default fallback).
-    En,
+    /// English.
+    En = 0,
     /// German (`de` / `de_DE` / `de_AT` / `de_CH`).
-    De,
+    De = 1,
 }
 
+static INITIALIZED: AtomicU8 = AtomicU8::new(0);
+static ACTIVE_LOCALE: AtomicU8 = AtomicU8::new(0);
+
 impl Locale {
-    /// Detects the active locale from `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, or `LANG`.
+    /// Detects the initial locale from `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, or `LANG`.
     #[must_use]
     pub fn detect() -> Self {
         for var in ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"] {
@@ -31,10 +37,33 @@ impl Locale {
     }
 }
 
-/// Translates `msgid` using the active system locale.
+/// Returns the currently active UI [`Locale`].
+#[must_use]
+pub fn active_locale() -> Locale {
+    if INITIALIZED
+        .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        let detected = Locale::detect();
+        ACTIVE_LOCALE.store(detected as u8, Ordering::Release);
+        return detected;
+    }
+    match ACTIVE_LOCALE.load(Ordering::Acquire) {
+        1 => Locale::De,
+        _ => Locale::En,
+    }
+}
+
+/// Sets the active UI [`Locale`] at runtime.
+pub fn set_locale(locale: Locale) {
+    INITIALIZED.store(1, Ordering::Release);
+    ACTIVE_LOCALE.store(locale as u8, Ordering::Release);
+}
+
+/// Translates `msgid` using the active runtime locale.
 #[must_use]
 pub fn tr(msgid: &'static str) -> &'static str {
-    tr_for(Locale::detect(), msgid)
+    tr_for(active_locale(), msgid)
 }
 
 /// Translates `msgid` for an explicit [`Locale`].
@@ -48,6 +77,12 @@ pub fn tr_for(locale: Locale, msgid: &'static str) -> &'static str {
         "Devices" => "Geräte",
         "Overview" => "Übersicht",
         "DPI & Sensor" => "DPI & Sensor",
+        "DPI Presets" => "DPI-Stufen",
+        "Click a preset to apply immediately, or add custom stages (max 6)." => {
+            "Preset anklicken zum direkten Übernehmen oder eigene Stufen anlegen (max. 6)."
+        }
+        "Add Custom DPI" => "Eigene DPI-Stufe",
+        "+ Add" => "+ Hinzufügen",
         "Buttons" => "Tasten",
         "Lighting" => "Beleuchtung",
         "Profiles" => "Profile",
@@ -56,6 +91,7 @@ pub fn tr_for(locale: Locale, msgid: &'static str) -> &'static str {
         "Undo" => "Rückgängig",
         "Save to profile" => "Im Profil speichern",
         "Apply" => "Anwenden",
+        "Apply Effect" => "Effekt anwenden",
         "Backup Now" => "Backup erstellen",
         "Install udev rule" => "udev-Regel installieren",
         "Retry" => "Erneut versuchen",
@@ -77,6 +113,8 @@ pub fn tr_for(locale: Locale, msgid: &'static str) -> &'static str {
         "Settings applied" => "Einstellungen übernommen",
         "Change undone" => "Änderung rückgängig gemacht",
         "Backup created" => "Backup erstellt",
+        "Click a button on the mouse diagram" => "Taste im Mausdiagramm anklicken",
+        "Highlight" => "Hervorheben",
         _ => msgid,
     }
 }
@@ -94,5 +132,13 @@ mod tests {
         );
         assert_eq!(tr_for(Locale::En, "Overview"), "Overview");
         assert_eq!(tr_for(Locale::De, "Untranslated"), "Untranslated");
+    }
+
+    #[test]
+    fn runtime_locale_switches_between_en_and_de() {
+        set_locale(Locale::En);
+        assert_eq!(tr("Overview"), "Overview");
+        set_locale(Locale::De);
+        assert_eq!(tr("Overview"), "Übersicht");
     }
 }

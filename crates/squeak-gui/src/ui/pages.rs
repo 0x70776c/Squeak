@@ -4,13 +4,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk4::gdk::Texture;
+#[allow(deprecated)]
+use gtk4::ColorChooserWidget;
+use gtk4::gdk::{RGBA, Texture};
 use gtk4::gdk_pixbuf::PixbufLoader;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Adjustment, Align, Box as GtkBox, Button, DropDown, Entry, FlowBox, GestureClick, Label,
-    Orientation, Picture, Scale, SelectionMode, SpinButton, StringList,
+    Adjustment, Align, Box as GtkBox, Button, DropDown, FlowBox, GestureClick, Label, Orientation,
+    Picture, Scale, SelectionMode, SpinButton, StringList,
 };
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -258,21 +260,21 @@ pub fn build_dpi_page(
 
                 // DPI Presets Group (default 700, 1000, 1200, 3600; up to 6 stages)
                 let presets_group = adw::PreferencesGroup::new();
-                presets_group.set_title("DPI Presets");
-                presets_group.set_description(Some(
+                presets_group.set_title(tr("DPI Presets"));
+                presets_group.set_description(Some(tr(
                     "Click a preset to apply immediately, or add custom stages (max 6).",
-                ));
+                )));
 
                 let presets_row = adw::ActionRow::new();
                 presets_row.set_child(Some(&presets_flow));
                 presets_group.add(&presets_row);
 
                 let add_row = adw::ActionRow::new();
-                add_row.set_title("Add Custom DPI");
+                add_row.set_title(tr("Add Custom DPI"));
                 let spin_adj = Adjustment::new(1600.0, min_dpi, max_dpi, step, step * 2.0, 0.0);
                 let spin = SpinButton::new(Some(&spin_adj), step, 0);
                 spin.set_valign(Align::Center);
-                let add_btn = Button::with_label("+ Add");
+                let add_btn = Button::with_label(tr("+ Add"));
                 add_btn.add_css_class("suggested-action");
                 add_btn.set_valign(Align::Center);
 
@@ -364,7 +366,7 @@ pub fn build_buttons_page(snap: &DeviceSnapshot) -> adw::PreferencesPage {
     picture.set_halign(Align::Center);
     update_svg_picture(&picture, svg_name.as_deref(), None);
 
-    let selected_label = Label::new(Some("Click a button on the mouse diagram"));
+    let selected_label = Label::new(Some(tr("Click a button on the mouse diagram")));
     selected_label.set_halign(Align::Center);
     selected_label.add_css_class("dim-label");
 
@@ -406,7 +408,7 @@ pub fn build_buttons_page(snap: &DeviceSnapshot) -> adw::PreferencesPage {
         let row = adw::ActionRow::new();
         row.set_title(&b.label);
         row.set_subtitle(&format!("CID 0x{:04X}", b.cid));
-        let btn = Button::with_label("Highlight");
+        let btn = Button::with_label(tr("Highlight"));
         let pic_ref = picture.clone();
         let svg_ref = svg_name.clone();
         let svg_id_opt = b.svg_id.clone();
@@ -425,7 +427,8 @@ pub fn build_buttons_page(snap: &DeviceSnapshot) -> adw::PreferencesPage {
     page
 }
 
-/// Builds the RGB Lighting page (`0x8070`).
+/// Builds the RGB Lighting page (`0x8070`) with an interactive color chooser panel.
+#[allow(deprecated)]
 pub fn build_lighting_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::new();
     page.set_title(tr("Lighting"));
@@ -449,15 +452,50 @@ pub fn build_lighting_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> ad
         effect_row.add_suffix(&effect_dropdown);
         group.add(&effect_row);
 
-        let color_entry = Entry::new();
-        color_entry.set_text("#00AAFF");
-        color_entry.set_max_length(7);
-        color_entry.set_valign(Align::Center);
-        color_entry.set_width_chars(9);
+        let hex_label = Label::new(Some("#00AAFF"));
+        hex_label.add_css_class("monospace");
+        hex_label.set_valign(Align::Center);
+
         let color_row = adw::ActionRow::new();
         color_row.set_title(tr("Color"));
-        color_row.add_suffix(&color_entry);
+        color_row.add_suffix(&hex_label);
         group.add(&color_row);
+
+        let chooser = ColorChooserWidget::new();
+        chooser.set_use_alpha(false);
+        chooser.set_show_editor(true);
+        chooser.set_rgba(&RGBA::new(0.0, 0.667, 1.0, 1.0));
+        chooser.set_margin_top(6);
+        chooser.set_margin_bottom(6);
+
+        let hl_clone = hex_label.clone();
+        chooser.connect_rgba_notify(move |c| {
+            hl_clone.set_text(&rgba_to_hex(&c.rgba()));
+        });
+
+        let chooser_row = adw::ActionRow::new();
+        chooser_row.set_child(Some(&chooser));
+        group.add(&chooser_row);
+
+        let speed_adj = Adjustment::new(2000.0, 500.0, 10000.0, 250.0, 500.0, 0.0);
+        let speed_scale = Scale::new(Orientation::Horizontal, Some(&speed_adj));
+        speed_scale.set_draw_value(true);
+        speed_scale.set_digits(0);
+        speed_scale.set_size_request(180, -1);
+        let speed_row = adw::ActionRow::new();
+        speed_row.set_title(tr("Speed (ms)"));
+        speed_row.add_suffix(&speed_scale);
+        group.add(&speed_row);
+
+        let bright_adj = Adjustment::new(100.0, 10.0, 100.0, 5.0, 10.0, 0.0);
+        let bright_scale = Scale::new(Orientation::Horizontal, Some(&bright_adj));
+        bright_scale.set_draw_value(true);
+        bright_scale.set_digits(0);
+        bright_scale.set_size_request(180, -1);
+        let bright_row = adw::ActionRow::new();
+        bright_row.set_title(tr("Brightness (%)"));
+        bright_row.add_suffix(&bright_scale);
+        group.add(&bright_row);
 
         let apply_btn = Button::with_label(tr("Apply"));
         apply_btn.add_css_class("suggested-action");
@@ -467,7 +505,9 @@ pub fn build_lighting_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> ad
         let zone_idx = zone.zone_index;
         let b = backend.clone();
         let dd = effect_dropdown.clone();
-        let ce = color_entry.clone();
+        let ch = chooser.clone();
+        let sp = speed_scale.clone();
+        let br = bright_scale.clone();
         apply_btn.connect_clicked(move |_| {
             let eff = match dd.selected() {
                 0 => "off",
@@ -475,18 +515,22 @@ pub fn build_lighting_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> ad
                 2 => "breathing",
                 _ => "cycle",
             };
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let period_ms = sp.value().round().clamp(500.0, 10000.0) as u16;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let brightness_pct = br.value().round().clamp(10.0, 100.0) as u8;
             b.send(UiCommand::SetLedEffect {
                 device_key: key.clone(),
                 zone_index: zone_idx,
                 effect: eff.to_owned(),
-                color_hex: ce.text().to_string(),
-                period_ms: 2000,
-                brightness_pct: 100,
+                color_hex: rgba_to_hex(&ch.rgba()),
+                period_ms,
+                brightness_pct,
             });
         });
 
         let action_row = adw::ActionRow::new();
-        action_row.set_title("Apply Effect");
+        action_row.set_title(tr("Apply Effect"));
         action_row.add_suffix(&apply_btn);
         group.add(&action_row);
 
@@ -494,6 +538,16 @@ pub fn build_lighting_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> ad
     }
 
     page
+}
+
+fn rgba_to_hex(c: &RGBA) -> String {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let r = (f64::from(c.red()) * 255.0).round().clamp(0.0, 255.0) as u8;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let g = (f64::from(c.green()) * 255.0).round().clamp(0.0, 255.0) as u8;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let b = (f64::from(c.blue()) * 255.0).round().clamp(0.0, 255.0) as u8;
+    format!("#{r:02X}{g:02X}{b:02X}")
 }
 
 /// Builds the Onboard Profiles page (`0x8100`) with slot switcher & Backup button.

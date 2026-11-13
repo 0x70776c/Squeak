@@ -16,7 +16,7 @@ use libadwaita as adw;
 use squeak_core::DaemonDeviceSummary;
 
 use crate::backend::{BackendHandle, DeviceSnapshot, UiCommand, UiEvent};
-use crate::i18n::tr;
+use crate::i18n::{Locale, active_locale, set_locale, tr};
 use crate::state::{
     DeviceCapabilities, ErrorViewState, UndoAction, UndoStack, classify_device_probe,
 };
@@ -82,10 +82,17 @@ fn build_ui(app: &adw::Application) {
     let refresh_btn = Button::from_icon_name("view-refresh-symbolic");
     refresh_btn.set_tooltip_text(Some(tr("Refresh")));
 
+    let lang_btn = Button::with_label(match active_locale() {
+        Locale::En => "EN",
+        Locale::De => "DE",
+    });
+    lang_btn.set_tooltip_text(Some("Switch language (EN / DE)"));
+
     // Sidebar layout
     let sidebar_box = GtkBox::new(Orientation::Vertical, 0);
     let sidebar_header = adw::HeaderBar::new();
     sidebar_header.set_title_widget(Some(&adw::WindowTitle::new(tr("Squeak"), "")));
+    sidebar_header.pack_start(&lang_btn);
     sidebar_header.pack_end(&refresh_btn);
     sidebar_box.append(&sidebar_header);
 
@@ -121,6 +128,42 @@ fn build_ui(app: &adw::Application) {
 
     let icon_theme = IconTheme::for_display(&WidgetExt::display(&window));
     icon_theme.add_search_path("/usr/share/icons/Adwaita");
+
+    // Wire Language toggle button (EN <-> DE)
+    {
+        let b = backend.clone();
+        let st = Rc::clone(&state);
+        let cs = content_stack.clone();
+        let nl = nav_list.clone();
+        let uc = undo_content.clone();
+        let ub = undo_btn.clone();
+        let rb = refresh_btn.clone();
+        let ct = content_title.clone();
+        let lb = lang_btn.clone();
+        lang_btn.connect_clicked(move |_| {
+            let next = match active_locale() {
+                Locale::En => Locale::De,
+                Locale::De => Locale::En,
+            };
+            set_locale(next);
+            lb.set_label(match next {
+                Locale::En => "EN",
+                Locale::De => "DE",
+            });
+            uc.set_label(tr("Undo"));
+            ub.set_tooltip_text(Some(tr("Undo")));
+            rb.set_tooltip_text(Some(tr("Refresh")));
+
+            let snap_opt = st.borrow().current_snapshot.clone();
+            let presets = Rc::clone(&st.borrow().dpi_presets);
+            if let Some(snap) = snap_opt {
+                render_snapshot(&snap, &b, &presets, &cs, &nl);
+                if let Some(vis) = cs.visible_child_name() {
+                    ct.set_title(&page_title_for_name(vis.as_str()));
+                }
+            }
+        });
+    }
 
     // Wire Refresh button
     {
