@@ -4,9 +4,10 @@
 //! one single place so CLI direct mode and daemon DBus handlers behave identically.
 
 use hidpp::{
-    AdjustableDpiDriver, AdjustableDpiFeature, DeviceIndex, DeviceNameDriver, DeviceNameFeature,
-    Dpi, DpiCapabilities, ExtendedReportRateDriver, FeatureId, FeatureTable, FirmwareInfoDriver,
-    FirmwareInfoFeature, HidDeviceInfo, HidTransport, HidppError, HidppFeature, HidppSession,
+    AdjustableDpiDriver, AdjustableDpiFeature, ColorLedEffectsDriver, DeviceIndex,
+    DeviceNameDriver, DeviceNameFeature, Dpi, DpiCapabilities, ExtendedReportRateDriver, FeatureId,
+    FeatureTable, FirmwareInfoDriver, FirmwareInfoFeature, HidDeviceInfo, HidTransport, HidppError,
+    HidppFeature, HidppSession, LedEffect, LedEffectId, OnboardMode, OnboardProfilesDriver,
     ProtocolError, ReportRate, ReportRateDriver, read_battery, read_report_rate,
     set_report_rate_verified,
 };
@@ -15,7 +16,8 @@ use crate::device_data::DeviceDatabase;
 use crate::dump::DeviceDump;
 use crate::settings::{
     BatteryStatusReport, DeviceNameReport, DeviceStatusReport, DpiConfigReport, DpiWriteReport,
-    FirmwareSummaryReport, PlannedWireFrame, ReportRateConfigReport, ReportRateWriteReport,
+    FirmwareSummaryReport, LedConfigReport, LedWriteReport, LedZoneStatusReport, OnboardModeReport,
+    OnboardModeWriteReport, PlannedWireFrame, ReportRateConfigReport, ReportRateWriteReport,
     SensorDpiReport,
 };
 
@@ -73,6 +75,20 @@ pub fn read_device_status<T: HidTransport>(
             None
         }
     };
+    let led = match read_led_config(session, table) {
+        Ok(val) => val,
+        Err(err) => {
+            notices.push(format!("COLOR_LED_EFFECTS read failed: {err}"));
+            None
+        }
+    };
+    let onboard_mode = match read_onboard_mode(session, table) {
+        Ok(val) => val,
+        Err(err) => {
+            notices.push(format!("ONBOARD_PROFILES read failed: {err}"));
+            None
+        }
+    };
 
     DeviceStatusReport {
         path: info.path.display().to_string(),
@@ -83,6 +99,8 @@ pub fn read_device_status<T: HidTransport>(
         battery,
         dpi,
         report_rate,
+        led,
+        onboard_mode,
         notices,
     }
 }
@@ -455,4 +473,232 @@ fn format_hex_bytes(bytes: &[u8]) -> String {
         .map(|b| format!("{b:02X}"))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Reads active and supported LED lighting state from `COLOR_LED_EFFECTS` (`0x8070`).
+///
+/// Returns `Ok(None)` when `0x8070` is not present on the device.
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if querying LED zones fails.
+pub fn read_led_config<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    table: &FeatureTable,
+) -> Result<Option<LedConfigReport>, HidppError> {
+    let Some(entry) = table.get(FeatureId::COLOR_LED_EFFECTS) else {
+        return Ok(None);
+    };
+    let driver = ColorLedEffectsDriver::from_entry(entry)?;
+    let dev_idx = table.device_index();
+    let zones = driver.query_all_zones(session, dev_idx)?;
+    let zone_reports = zones
+        .into_iter()
+        .map(|z| {
+            let location_name = match z.location {
+                0x0001 => "Logo".to_string(),
+                0x0002 => "DPI LEDs".to_string(),
+                _ => format!("Zone {}", z.zone_index),
+            };
+            let supported_effects = z
+                .supported_effects
+                .into_iter()
+                .map(|e| match e {
+                    LedEffectId::Off => "off".to_string(),
+                    LedEffectId::Static => "static".to_string(),
+                    LedEffectId::Breathing => "breathing".to_string(),
+                    LedEffectId::ColorCycle => "color_cycle".to_string(),
+                    LedEffectId::Other(id) => format!("0x{id:04X}"),
+                })
+                .collect();
+            LedZoneStatusReport {
+                zone_index: z.zone_index,
+                location: z.location,
+                location_name,
+                effect_count: z.effect_count,
+                supported_effects,
+            }
+        })
+        .collect();
+
+    Ok(Some(LedConfigReport {
+        feature_version: driver.version(),
+        write_supported: driver.version() <= ColorLedEffectsDriver::MAX_SUPPORTED_VERSION,
+        zones: zone_reports,
+    }))
+}
+
+/// Validates and either previews (`apply = false`) or applies (`apply = true`) an LED effect via `0x8070`.
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if `0x8070` is missing or parameters are invalid.
+pub fn execute_led_write<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    table: &FeatureTable,
+    zone_index: u8,
+    effect: LedEffect,
+    apply: bool,
+) -> Result<LedWriteReport, HidppError> {
+    let Some(entry) = table.get(FeatureId::COLOR_LED_EFFECTS) else {
+        return Err(ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::COLOR_LED_EFFECTS,
+        }
+        .into());
+    };
+    let driver = ColorLedEffectsDriver::from_entry(entry)?;
+    let payload = effect.to_payload(zone_index)?;
+    let planned_frame = PlannedWireFrame {
+        feature_id: "0x8070".to_string(),
+        feature_index: driver.feature_index().0,
+        function_id: 3,
+        params_hex: format_hex_bytes(&payload),
+    };
+
+    let (effect_name, color, period_ms, brightness_pct) = match effect {
+        LedEffect::Off => ("off".to_string(), None, None, None),
+        LedEffect::Static { color } => ("static".to_string(), Some(color.to_string()), None, None),
+        LedEffect::Breathing {
+            color,
+            period_ms,
+            brightness_pct,
+        } => (
+            "breathing".to_string(),
+            Some(color.to_string()),
+            Some(period_ms),
+            Some(brightness_pct),
+        ),
+        LedEffect::ColorCycle {
+            period_ms,
+            brightness_pct,
+        } => (
+            "color_cycle".to_string(),
+            None,
+            Some(period_ms),
+            Some(brightness_pct),
+        ),
+    };
+
+    if apply {
+        driver.set_led_effect(session, table.device_index(), zone_index, effect)?;
+    }
+
+    Ok(LedWriteReport {
+        applied: apply,
+        zone_index,
+        effect: effect_name,
+        color,
+        period_ms,
+        brightness_pct,
+        verified: apply,
+        planned_frame,
+        note: if !apply {
+            Some("Dry run only: no frames sent to device (use --apply to write)".to_string())
+        } else {
+            None
+        },
+    })
+}
+
+/// Reads operating mode and memory description from `ONBOARD_PROFILES` (`0x8100`).
+///
+/// Returns `Ok(None)` when `0x8100` is not present on the device.
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if querying onboard profiles fails.
+pub fn read_onboard_mode<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    table: &FeatureTable,
+) -> Result<Option<OnboardModeReport>, HidppError> {
+    let Some(entry) = table.get(FeatureId::ONBOARD_PROFILES) else {
+        return Ok(None);
+    };
+    let driver = OnboardProfilesDriver::from_entry(entry)?;
+    let dev_idx = table.device_index();
+    let desc = driver.get_description(session, dev_idx)?;
+    let mode = driver.get_onboard_mode(session, dev_idx)?;
+    let cur_prof = driver.get_current_profile(session, dev_idx)?;
+
+    Ok(Some(OnboardModeReport {
+        feature_version: driver.version(),
+        mode: match mode {
+            OnboardMode::Host => "host".to_string(),
+            OnboardMode::Onboard => "onboard".to_string(),
+            OnboardMode::Other(c) => format!("unknown(0x{c:02X})"),
+        },
+        current_profile: cur_prof,
+        profile_count: desc.profile_count,
+        button_count: desc.button_count,
+        sector_count: desc.sector_count,
+    }))
+}
+
+/// Validates and either previews (`apply = false`) or applies + readback-verifies (`apply = true`)
+/// switching between Host Software Mode and Onboard Profile Memory Mode via `0x8100`.
+///
+/// # Errors
+///
+/// Returns [`HidppError`] if `0x8100` is missing or post-write readback mismatches.
+pub fn execute_host_mode_write<T: HidTransport>(
+    session: &mut HidppSession<T>,
+    table: &FeatureTable,
+    target_host_mode: bool,
+    apply: bool,
+) -> Result<OnboardModeWriteReport, HidppError> {
+    let Some(entry) = table.get(FeatureId::ONBOARD_PROFILES) else {
+        return Err(ProtocolError::FeatureNotSupported {
+            feature_id: FeatureId::ONBOARD_PROFILES,
+        }
+        .into());
+    };
+    let driver = OnboardProfilesDriver::from_entry(entry)?;
+    let dev_idx = table.device_index();
+    let prev_mode = driver.get_onboard_mode(session, dev_idx)?;
+    let prev_str = match prev_mode {
+        OnboardMode::Host => "host".to_string(),
+        OnboardMode::Onboard => "onboard".to_string(),
+        OnboardMode::Other(c) => format!("unknown(0x{c:02X})"),
+    };
+    let target_mode = if target_host_mode {
+        OnboardMode::Host
+    } else {
+        OnboardMode::Onboard
+    };
+    let target_str = if target_host_mode { "host" } else { "onboard" }.to_string();
+
+    let planned_frame = PlannedWireFrame {
+        feature_id: "0x8100".to_string(),
+        feature_index: driver.feature_index().0,
+        function_id: 1,
+        params_hex: format!("{:02X}", u8::from(target_mode)),
+    };
+
+    let (readback_mode, verified) = if apply {
+        driver.set_onboard_mode(session, dev_idx, target_mode)?;
+        let readback = driver.get_onboard_mode(session, dev_idx)?;
+        let rb_str = match readback {
+            OnboardMode::Host => "host".to_string(),
+            OnboardMode::Onboard => "onboard".to_string(),
+            OnboardMode::Other(c) => format!("unknown(0x{c:02X})"),
+        };
+        let matches = readback == target_mode;
+        (Some(rb_str), matches)
+    } else {
+        (None, false)
+    };
+
+    Ok(OnboardModeWriteReport {
+        applied: apply,
+        previous_mode: prev_str,
+        requested_mode: target_str,
+        readback_mode,
+        verified,
+        planned_frame,
+        note: if !apply {
+            Some("Dry run only: no frames sent to device (use --apply to write)".to_string())
+        } else {
+            None
+        },
+    })
 }

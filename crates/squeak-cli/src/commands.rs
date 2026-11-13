@@ -13,11 +13,20 @@ use squeak_core::{
 };
 use thiserror::Error;
 
-use crate::cli::{Cli, Command, DpiCommand, ListArgs, ReportRateCommand, TargetArgs};
+use crate::cli::{
+    ButtonsCommand, Cli, Command, DpiCommand, HostModeCommand, LedCommand, ListArgs,
+    ReportRateCommand, TargetArgs,
+};
 use crate::m3::{
     dpi_get_from_transport, dpi_set_from_transport, format_dpi_get_human, format_dpi_set_human,
     format_report_rate_get_human, format_report_rate_set_human, format_status_human,
     report_rate_get_from_transport, report_rate_set_from_transport, status_from_transport,
+};
+use crate::m5::{
+    buttons_list_from_transport, format_buttons_list_human, format_host_mode_get_human,
+    format_host_mode_set_human, format_led_get_human, format_led_set_human,
+    host_mode_get_from_transport, host_mode_set_from_transport, led_get_from_transport,
+    led_set_from_transport, run_buttons_spy,
 };
 use crate::udev::{UdevSetupError, format_setup_udev_human, run_setup_udev};
 
@@ -103,6 +112,41 @@ pub fn execute(cli: Cli) -> Result<String, CliError> {
                     set_args.apply,
                 )?;
                 format_output(&report, cli.json, format_report_rate_set_human)
+            }
+        },
+        Command::Led(args) => match args.action {
+            LedCommand::Get(target) => {
+                let (device_index, transport) = open_selected_transport(&target)?;
+                let report = led_get_from_transport(transport, device_index)?;
+                format_output(&report, cli.json, format_led_get_human)
+            }
+            LedCommand::Set(set_args) => {
+                let (device_index, transport) = open_selected_transport(&set_args.target)?;
+                let report = led_set_from_transport(transport, device_index, &set_args)?;
+                format_output(&report, cli.json, format_led_set_human)
+            }
+        },
+        Command::HostMode(args) => match args.action {
+            HostModeCommand::Get(target) => {
+                let (device_index, transport) = open_selected_transport(&target)?;
+                let report = host_mode_get_from_transport(transport, device_index)?;
+                format_output(&report, cli.json, format_host_mode_get_human)
+            }
+            HostModeCommand::Set(set_args) => {
+                let (device_index, transport) = open_selected_transport(&set_args.target)?;
+                let report = host_mode_set_from_transport(transport, device_index, &set_args)?;
+                format_output(&report, cli.json, format_host_mode_set_human)
+            }
+        },
+        Command::Buttons(args) => match args.action {
+            ButtonsCommand::List(target) => {
+                let (device_index, transport) = open_selected_transport(&target)?;
+                let report = buttons_list_from_transport(transport, device_index, &db)?;
+                format_output(&report, cli.json, format_buttons_list_human)
+            }
+            ButtonsCommand::Spy(spy_args) => {
+                let (device_index, transport) = open_selected_transport(&spy_args.target)?;
+                run_buttons_spy(transport, device_index, spy_args.count, cli.json)
             }
         },
         Command::DumpDevice(args) => run_dump_device(&args, &db, cli.json),

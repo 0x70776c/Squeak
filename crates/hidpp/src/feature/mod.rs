@@ -2,12 +2,19 @@
 
 pub mod adjustable_dpi;
 pub mod battery;
+pub mod button_spy;
 pub mod cache;
+pub mod color_led;
 pub mod device_name;
 pub mod feature_set;
 pub mod firmware_info;
+pub mod hires_wheel;
+pub mod onboard_profiles;
 pub mod report_rate;
+pub mod reprog_controls_v4;
+pub mod rgb_effects;
 pub mod root;
+pub mod smart_shift;
 
 use core::fmt;
 
@@ -24,18 +31,25 @@ pub use battery::{
     BatteryReading, BatteryStatusDriver, BatteryStatusReply, UnifiedBatteryCapabilities,
     UnifiedBatteryDriver, UnifiedBatteryStatus, read_battery,
 };
+pub use button_spy::{ButtonEvent, ButtonMask, MouseButtonSpyDriver};
 pub use cache::{FeatureCache, FeatureTable};
+pub use color_led::{ColorLedEffectsDriver, LedEffect, LedEffectId, LedZoneInfo, RgbColor};
 pub use device_name::{DeviceNameDriver, DeviceNameFeature, HidppDeviceType};
 pub use feature_set::IFeatureSet;
 pub use firmware_info::{
     DeviceFirmwareSummary, FirmwareEntity, FirmwareEntityKind, FirmwareInfoDriver,
     FirmwareInfoFeature, FirmwareInventory, TransportCapabilities,
 };
+pub use hires_wheel::{HiresWheelDriver, WheelCapability, WheelMode};
+pub use onboard_profiles::{OnboardMemoryDescription, OnboardMode, OnboardProfilesDriver};
 pub use report_rate::{
     ExtendedReportRateDriver, ReportRate, ReportRateDriver, ReportRateFeature, ReportRateState,
     ReportRateWriteVerification, read_report_rate, set_report_rate_verified,
 };
+pub use reprog_controls_v4::{ControlId, ControlInfo, ControlReporting, ReprogControlsV4Driver};
+pub use rgb_effects::RgbEffectsDriver;
 pub use root::{IRoot, ResolvedFeature};
+pub use smart_shift::{SmartShiftDriver, SmartShiftMode, SmartShiftStatus};
 
 /// 16-bit HID++ 2.0 feature identifier (for example `0x0000` for `IRoot`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -76,6 +90,8 @@ impl FeatureId {
     pub const RGB_EFFECTS: Self = Self(0x8071);
     /// `0x8100`: Onboard profile memory management (`ONBOARD_PROFILES`).
     pub const ONBOARD_PROFILES: Self = Self(0x8100);
+    /// `0x8110`: Physical button click and release notifications (`MOUSE_BUTTON_SPY`).
+    pub const MOUSE_BUTTON_SPY: Self = Self(0x8110);
 
     /// Returns the raw 16-bit identifier.
     #[must_use]

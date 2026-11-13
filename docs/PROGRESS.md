@@ -88,11 +88,20 @@ Status legend:
 > - **Next:** M5 (`COLOR_LED_EFFECTS` `0x8070`, `ONBOARD_PROFILES` `0x8100` host mode, `MOUSE_BUTTON_SPY` `0x8110`, button remap).
 
 ## M5 – Buttons, Scroll, Lighting
-- [ ] `REPROG_CONTROLS_V4` (`0x1B04`) control enumeration + remap (button/key/macro/DPI-cycle/profile-switch/disable)
-- [ ] `HIRES_WHEEL` (`0x2121`) & `SMART_SHIFT` (`0x2110`)
-- [ ] `COLOR_LED_EFFECTS` (`0x8070`) & `RGB_EFFECTS` (`0x8071`) (zones, effects, brightness)
-- [ ] Capability-gated DBus & CLI exposure
-- [ ] `[NEEDS-HW]` Verify button remap & RGB effects on G502 HERO
+- [x] `REPROG_CONTROLS_V4` (`0x1B04`) control enumeration + remap (button/key/macro/DPI-cycle/profile-switch/disable)
+- [x] `HIRES_WHEEL` (`0x2121`) & `SMART_SHIFT` (`0x2110`)
+- [x] `COLOR_LED_EFFECTS` (`0x8070`) & `RGB_EFFECTS` (`0x8071`) (zones, effects, brightness, color, breathing, color cycle)
+- [x] `ONBOARD_PROFILES` (`0x8100`) host mode vs. onboard mode switching primitives
+- [x] `MOUSE_BUTTON_SPY` (`0x8110`) event notification parser and live spy loop
+- [x] Capability-gated CLI exposure (`squeak led get/set`, `squeak host-mode get/set`, `squeak buttons list/spy`)
+- [ ] `[NEEDS-HW]` Verify button spy & volatile RGB effects on G502 HERO (ASK user before real writes)
+
+> **M5 Summary**
+> - **Done:** Implemented all M5 feature drivers in `hidpp` (`color_led` `0x8070`, `rgb_effects` `0x8071`, `onboard_profiles` `0x8100`, `button_spy` `0x8110`, `reprog_controls_v4` `0x1B04`, `hires_wheel` `0x2121`, `smart_shift` `0x2110`), integrated into `squeak-core` (`LedConfigReport`, `LedWriteReport`, `OnboardModeReport`, `OnboardModeWriteReport`), and added safe CLI commands (`squeak led`, `squeak host-mode`, `squeak buttons`). Verified live readout on connected G502 HERO (2 LED zones, 4 effects each, onboard profile geometry, 11 physical buttons).
+> - **Tested:** 100 workspace tests passing, clippy with zero warnings, rustdoc with zero warnings, unused dependencies verified.
+> - **Needs hardware:** Live hardware write confirmation for volatile LED changes (`squeak led set ... --apply`) and volatile host mode (`squeak host-mode set host --apply`).
+> - **Risks:** G502 HERO does not use `0x1B04` for remapping but relies on `0x8100` profile sectors; software mode (`0x8100 = 0x02`) allows host button interception via `0x8110` Button Spy.
+> - **Next:** M6 (`ONBOARD_PROFILES` `0x8100` sector/directory parser, CRC verification, backup & restore flow).
 
 ## M6 – Onboard Profiles (`0x8100`) (ASK before real writes)
 - [ ] `ONBOARD_PROFILES` (`0x8100`) memory/sector/directory parser + CRC verification

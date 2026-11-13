@@ -17,12 +17,14 @@ pub use dump::{
     DeviceListEntry, FeatureDumpEntry, FeatureFlagSummary, ProbeStatus,
 };
 pub use ops::{
-    execute_dpi_write, execute_report_rate_write, parse_report_rate_hz, read_device_status,
-    read_dpi_config, read_report_rate_config,
+    execute_dpi_write, execute_host_mode_write, execute_led_write, execute_report_rate_write,
+    parse_report_rate_hz, read_device_status, read_dpi_config, read_led_config, read_onboard_mode,
+    read_report_rate_config,
 };
 pub use settings::{
     BatteryStatusReport, DaemonDeviceSummary, DeviceNameReport, DeviceStatusReport,
     DpiCapabilitiesReport, DpiConfigReport, DpiRangeReport, DpiWriteReport, FirmwareEntityReport,
-    FirmwareSummaryReport, PlannedWireFrame, ReportRateConfigReport, ReportRateWriteReport,
+    FirmwareSummaryReport, LedConfigReport, LedWriteReport, LedZoneStatusReport, OnboardModeReport,
+    OnboardModeWriteReport, PlannedWireFrame, ReportRateConfigReport, ReportRateWriteReport,
     SensorDpiReport,
 };

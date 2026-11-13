@@ -42,6 +42,16 @@ pub enum Command {
     #[command(name = "report-rate")]
     ReportRate(ReportRateArgs),
 
+    /// Inspect or set LED lighting effects (`0x8070`).
+    Led(LedArgs),
+
+    /// Inspect or switch operating mode (`host` software mode vs. `onboard` memory mode, `0x8100`).
+    #[command(name = "host-mode")]
+    HostMode(HostModeArgs),
+
+    /// List physical buttons or monitor click events (`0x8110` / `0x1B04`).
+    Buttons(ButtonsArgs),
+
     /// Dump the complete runtime feature table for a device (without serial numbers).
     #[command(name = "dump-device")]
     DumpDevice(TargetArgs),
@@ -172,6 +182,127 @@ pub struct ReportRateSetArgs {
     pub target: TargetArgs,
 }
 
+/// Arguments for `squeak led`.
+#[derive(Debug, Args)]
+pub struct LedArgs {
+    /// Action to perform on `COLOR_LED_EFFECTS` (`0x8070`).
+    #[command(subcommand)]
+    pub action: LedCommand,
+}
+
+/// Subcommands under `squeak led`.
+#[derive(Debug, Subcommand)]
+pub enum LedCommand {
+    /// Read LED zones and supported lighting effects.
+    Get(TargetArgs),
+
+    /// Set an LED lighting effect (dry-run by default; pass `--apply` to write to hardware).
+    Set(LedSetArgs),
+}
+
+/// Arguments for `squeak led set`.
+#[derive(Debug, Args)]
+pub struct LedSetArgs {
+    /// Effect mode: `off`, `static`, `breathing`, or `cycle`.
+    pub effect: String,
+
+    /// Target LED zone index (e.g. `0` for Primary/Logo, `1` for Secondary/DPI LEDs).
+    #[arg(long, default_value_t = 0)]
+    pub zone: u8,
+
+    /// Color hex code for static or breathing effects (e.g. `#FF0000` or `0000FF`).
+    #[arg(long)]
+    pub color: Option<String>,
+
+    /// Cycle duration in milliseconds for breathing or color cycle (default: 2000 for breathing, 4000 for cycle).
+    #[arg(long)]
+    pub period: Option<u16>,
+
+    /// Brightness percentage `0..=100` (default: 100).
+    #[arg(long)]
+    pub brightness: Option<u8>,
+
+    /// Actually transmit the write command to hardware.
+    /// When omitted, performs validation and prints a `--dry-run` plan only.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+
+    /// Explicitly preview without modifying hardware (default).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+/// Arguments for `squeak host-mode`.
+#[derive(Debug, Args)]
+pub struct HostModeArgs {
+    /// Action to perform on `ONBOARD_PROFILES` (`0x8100`).
+    #[command(subcommand)]
+    pub action: HostModeCommand,
+}
+
+/// Subcommands under `squeak host-mode`.
+#[derive(Debug, Subcommand)]
+pub enum HostModeCommand {
+    /// Read current operating mode (`host` software mode or `onboard` memory mode) and profile geometry.
+    Get(TargetArgs),
+
+    /// Switch operating mode to `host` or `onboard` (dry-run by default; pass `--apply` to write).
+    Set(HostModeSetArgs),
+}
+
+/// Arguments for `squeak host-mode set`.
+#[derive(Debug, Args)]
+pub struct HostModeSetArgs {
+    /// Target mode: `"host"` (software mode) or `"onboard"` (onboard profile memory mode).
+    pub mode: String,
+
+    /// Actually transmit the mode switch command to hardware and verify readback.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+
+    /// Explicitly preview without modifying hardware (default).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+/// Arguments for `squeak buttons`.
+#[derive(Debug, Args)]
+pub struct ButtonsArgs {
+    /// Action to perform on buttons/controls.
+    #[command(subcommand)]
+    pub action: ButtonsCommand,
+}
+
+/// Subcommands under `squeak buttons`.
+#[derive(Debug, Subcommand)]
+pub enum ButtonsCommand {
+    /// List buttons supported on the device.
+    List(TargetArgs),
+
+    /// Monitor and print physical button click and release events in real time (`0x8110`).
+    Spy(ButtonsSpyArgs),
+}
+
+/// Arguments for `squeak buttons spy`.
+#[derive(Debug, Args)]
+pub struct ButtonsSpyArgs {
+    /// Maximum number of events to receive before exiting (default: unlimited, exits on Ctrl+C).
+    #[arg(long)]
+    pub count: Option<usize>,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
@@ -240,5 +371,46 @@ mod tests {
             }
             other => panic!("unexpected command: {other:?}"),
         }
+
+        let led_set = Cli::try_parse_from([
+            "squeak",
+            "led",
+            "set",
+            "breathing",
+            "--color",
+            "#FF0000",
+            "--apply",
+        ])
+        .unwrap();
+        match led_set.command {
+            Command::Led(LedArgs {
+                action: LedCommand::Set(args),
+            }) => {
+                assert_eq!(args.effect, "breathing");
+                assert_eq!(args.color.as_deref(), Some("#FF0000"));
+                assert!(args.apply);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let host_mode =
+            Cli::try_parse_from(["squeak", "host-mode", "set", "host", "--apply"]).unwrap();
+        match host_mode.command {
+            Command::HostMode(HostModeArgs {
+                action: HostModeCommand::Set(args),
+            }) => {
+                assert_eq!(args.mode, "host");
+                assert!(args.apply);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let buttons = Cli::try_parse_from(["squeak", "buttons", "list"]).unwrap();
+        assert!(matches!(
+            buttons.command,
+            Command::Buttons(ButtonsArgs {
+                action: ButtonsCommand::List(_)
+            })
+        ));
     }
 }

@@ -256,8 +256,99 @@ pub struct DeviceStatusReport {
     pub dpi: Option<DpiConfigReport>,
     /// Polling report rate from `0x8061` or `0x8060` if present on the device.
     pub report_rate: Option<ReportRateConfigReport>,
+    /// LED lighting configuration from `0x8070` if present on the device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub led: Option<LedConfigReport>,
+    /// Onboard profile and mode information from `0x8100` if present on the device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onboard_mode: Option<OnboardModeReport>,
     /// Non-fatal warnings/notices encountered while reading optional features.
     pub notices: Vec<String>,
+}
+
+/// Status of an individual physical LED lighting zone on the device (`0x8070`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedZoneStatusReport {
+    /// Zero-based zone index (e.g. 0 for Logo, 1 for DPI LEDs).
+    pub zone_index: u8,
+    /// Hardware location code.
+    pub location: u16,
+    /// Friendly location name (e.g. `"Logo"` or `"DPI LEDs"`).
+    pub location_name: String,
+    /// Number of supported effects.
+    pub effect_count: u8,
+    /// Names of supported effects (e.g. `["off", "static", "breathing", "color_cycle"]`).
+    pub supported_effects: Vec<String>,
+}
+
+/// Complete LED lighting snapshot from `0x8070` `COLOR_LED_EFFECTS`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedConfigReport {
+    /// Feature version reported by firmware.
+    pub feature_version: u8,
+    /// Whether this driver version permits mutating writes.
+    pub write_supported: bool,
+    /// Configured LED zones.
+    pub zones: Vec<LedZoneStatusReport>,
+}
+
+/// Output of `squeak led set` (both `--dry-run` preview and `--apply` write).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LedWriteReport {
+    /// `true` when the write frame was actually transmitted (`--apply`), `false` in `--dry-run`.
+    pub applied: bool,
+    /// Target zone index.
+    pub zone_index: u8,
+    /// Target effect type (e.g. `"static"`, `"breathing"`, `"color_cycle"`, `"off"`).
+    pub effect: String,
+    /// Color hex code if applicable (e.g. `"#FF0000"`).
+    pub color: Option<String>,
+    /// Period in milliseconds if applicable.
+    pub period_ms: Option<u16>,
+    /// Brightness percentage if applicable.
+    pub brightness_pct: Option<u8>,
+    /// `true` when `--apply` successfully executed.
+    pub verified: bool,
+    /// Wire command details that were (or would be) sent.
+    pub planned_frame: PlannedWireFrame,
+    /// Optional safety note.
+    pub note: Option<String>,
+}
+
+/// Snapshot of `0x8100` `ONBOARD_PROFILES` operating mode and memory description.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnboardModeReport {
+    /// Feature version reported by firmware.
+    pub feature_version: u8,
+    /// Active mode: `"host"` or `"onboard"`.
+    pub mode: String,
+    /// Active onboard profile slot (`1..=5`, or `0` when in host mode).
+    pub current_profile: u16,
+    /// Total profile slots supported by onboard flash.
+    pub profile_count: u8,
+    /// Total buttons supported in onboard profiles.
+    pub button_count: u8,
+    /// Total sectors in onboard memory.
+    pub sector_count: u8,
+}
+
+/// Output of `squeak host-mode set` (both `--dry-run` preview and `--apply` verified write).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnboardModeWriteReport {
+    /// `true` when the write frame was actually transmitted (`--apply`), `false` in `--dry-run`.
+    pub applied: bool,
+    /// Mode prior to the command (`"host"` or `"onboard"`).
+    pub previous_mode: String,
+    /// Requested mode (`"host"` or `"onboard"`).
+    pub requested_mode: String,
+    /// Mode read back after applying (`Some("host")`, `Some("onboard")`, or `None` in dry-run).
+    pub readback_mode: Option<String>,
+    /// `true` only when readback matches requested mode.
+    pub verified: bool,
+    /// Wire command details that were (or would be) sent.
+    pub planned_frame: PlannedWireFrame,
+    /// Optional safety notice.
+    pub note: Option<String>,
 }
 
 /// Wire frame preview used for `--dry-run` and audit output of M3 write commands.

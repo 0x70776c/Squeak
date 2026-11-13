@@ -28,14 +28,18 @@ pub use error::{
 pub use feature::{
     AdjustableDpiDriver, AdjustableDpiFeature, BatteryCapability, BatteryChargingStatus,
     BatteryFeature, BatteryLevelBucket, BatteryPercent, BatteryReading, BatteryStatusDriver,
-    BatteryStatusReply, DeviceFirmwareSummary, DeviceNameDriver, DeviceNameFeature, Dpi,
+    BatteryStatusReply, ButtonEvent, ButtonMask, ColorLedEffectsDriver, ControlId, ControlInfo,
+    ControlReporting, DeviceFirmwareSummary, DeviceNameDriver, DeviceNameFeature, Dpi,
     DpiCapabilities, DpiRange, DpiWriteVerification, ExtendedReportRateDriver, FeatureCache,
     FeatureEntry, FeatureFlags, FeatureId, FeatureTable, FirmwareEntity, FirmwareEntityKind,
     FirmwareInfoDriver, FirmwareInfoFeature, FirmwareInventory, HidppDeviceType, HidppFeature,
-    IFeatureSet, IRoot, MAX_PROTOCOL_DPI, ProtocolVersion, ReportRate, ReportRateDriver,
-    ReportRateFeature, ReportRateState, ReportRateWriteVerification, ResolvedFeature,
-    SensorDpiState, TransportCapabilities, UnifiedBatteryCapabilities, UnifiedBatteryDriver,
-    UnifiedBatteryStatus, read_battery, read_report_rate, set_report_rate_verified,
+    HiresWheelDriver, IFeatureSet, IRoot, LedEffect, LedEffectId, LedZoneInfo, MAX_PROTOCOL_DPI,
+    MouseButtonSpyDriver, OnboardMemoryDescription, OnboardMode, OnboardProfilesDriver,
+    ProtocolVersion, ReportRate, ReportRateDriver, ReportRateFeature, ReportRateState,
+    ReportRateWriteVerification, ReprogControlsV4Driver, ResolvedFeature, RgbColor,
+    RgbEffectsDriver, SensorDpiState, SmartShiftDriver, SmartShiftMode, SmartShiftStatus,
+    TransportCapabilities, UnifiedBatteryCapabilities, UnifiedBatteryDriver, UnifiedBatteryStatus,
+    WheelCapability, WheelMode, read_battery, read_report_rate, set_report_rate_verified,
 };
 pub use frame::{
     DeviceIndex, FeatureIndex, FunctionId, HidppFrame, LONG_PARAM_LEN, LONG_REPORT_LEN,
