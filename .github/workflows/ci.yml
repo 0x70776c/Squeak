@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: "-D warnings"
+
+jobs:
+  quality:
+    name: Format, Clippy, Test & Docs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dev libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libgtk-4-dev libadwaita-1-dev libudev-dev libhidapi-dev
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Run unit & golden tests
+        run: cargo test --workspace --all-features
+      - name: Check documentation
+        run: cargo doc --workspace --no-deps
+
+  msrv:
+    name: MSRV (Rust 1.89)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dev libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libgtk-4-dev libadwaita-1-dev libudev-dev libhidapi-dev
+      - name: Check workspace with MSRV
+        run: cargo check --workspace --all-targets --all-features
+
+  deny:
+    name: Licenses & Advisories (cargo-deny)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  distro-matrix:
+    name: Distro Build (${{ matrix.distro }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        distro:
+          - fedora:latest
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - debian:stable
+          - archlinux:latest
+    container:
+      image: ${{ matrix.distro }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies (${{ matrix.distro }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.distro }}" in
+            fedora:*)
+              dnf install -y gcc pkgconf-pkg-config curl ca-certificates git \
+                gtk4-devel libadwaita-devel systemd-devel hidapi-devel
+              ;;
+            ubuntu:*|debian:*)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential pkg-config curl ca-certificates git \
+                libgtk-4-dev libadwaita-1-dev libudev-dev libhidapi-dev
+              ;;
+            archlinux:*)
+              pacman -Syu --noconfirm --needed \
+                base-devel pkgconf curl ca-certificates git \
+                gtk4 libadwaita systemd-libs hidapi
+              ;;
+          esac
+      - name: Install Rust toolchain (>= 1.89)
+        shell: bash
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.89.0 --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Build & test workspace (no HW tests)
+        shell: bash
+        run: cargo test --workspace --all-features
+
+  flatpak:
+    name: Flatpak Build
+    runs-on: ubuntu-24.04
+    if: hashFiles('packaging/flatpak/*.yml', 'packaging/flatpak/*.yaml', 'packaging/flatpak/*.json') != ''
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-47
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: squeak.flatpak
+          manifest-path: packaging/flatpak/dev.squeak.Squeak.yml
+          cache-key: flatpak-build
