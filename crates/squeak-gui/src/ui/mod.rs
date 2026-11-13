@@ -121,13 +121,19 @@ fn build_ui(app: &adw::Application) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(tr("Squeak"))
+        .icon_name("dev.squeak.Squeak")
         .default_width(920)
         .default_height(640)
         .content(&toast_overlay)
         .build();
 
+    gtk4::Window::set_default_icon_name("dev.squeak.Squeak");
     let icon_theme = IconTheme::for_display(&WidgetExt::display(&window));
     icon_theme.add_search_path("/usr/share/icons/Adwaita");
+    let repo_icons = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/icons");
+    if repo_icons.is_dir() {
+        icon_theme.add_search_path(repo_icons);
+    }
 
     // Wire Language toggle button (EN <-> DE)
     {

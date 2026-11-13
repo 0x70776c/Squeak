@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Squeak
+GenericName=Peripheral Control Panel
+GenericName[de]=Peripherie-Einstellungen
+Comment=Configure HID++ mice and peripherals on Linux
+Comment[de]=HID++-Mäuse und Peripheriegeräte unter Linux konfigurieren
+Exec=squeak-gui
+Icon=dev.squeak.Squeak
+Terminal=false
+Type=Application
+Categories=Settings;HardwareSettings;GTK;
+Keywords=mouse;dpi;polling;rgb;hidpp;peripheral;
+StartupNotify=true
+StartupWMClass=dev.squeak.Squeak
