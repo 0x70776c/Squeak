@@ -9,7 +9,7 @@ Status legend:
 ---
 
 ## Open Gates & Tracked Notes
-- **M0 Gate (pending user input):** License choice, MSRV (`rust-version`), minimum GTK4 / libadwaita strategy (native Ubuntu 22.04 fallback vs Flatpak-only for older distros).
+- **M0 Gate (resolved):** License = `GPL-3.0-or-later` (user choice); MSRV = `1.89` (conservative baseline via ADR-002); GUI baseline = `GTK 4.6` + `libadwaita 1.1` with feature-gated `v1_4` fallback (user choice).
 - **Pre-M3/M6 Note:** `CLAUDE.md` references a `hardware-safety` skill for M3 readback/writes and M6 onboard profiles (`0x8100`). Request or author `hardware-safety` rules before performing any real hardware writes.
 
 ---
@@ -18,11 +18,11 @@ Status legend:
 - [x] `.gitignore`, `rustfmt.toml`, `CLAUDE.md`, `.claude/skills/*`
 - [x] `.github/PULL_REQUEST_TEMPLATE.md` (with device contribution flow)
 - [x] `docs/PROGRESS.md`, `docs/decisions/001-architecture-and-crate-boundaries.md`, `docs/protocol.md`, `data/devices/README.md`
-- [~] **GATE:** Confirm license, MSRV, and minimum GTK4/libadwaita versions
-- [ ] `LICENSE`, `rust-toolchain.toml`, `deny.toml`, workspace `Cargo.toml` + crate scaffolds (`crates/{hidpp,squeak-core,squeakd,squeak-cli,squeak-gui}`)
-- [ ] `.github/workflows/ci.yml` (fmt, clippy, test, doc, deny, distro container matrix)
-- [ ] `README.md`, `CONTRIBUTING.md`, `docs/dev-setup.md`
-- [ ] M0 quality gate green & hostile self-review
+- [x] **GATE:** Confirmed license (`GPL-3.0-or-later`), MSRV (`1.89`), and min GTK4/libadwaita (`4.6` / `1.1` with `v1_4` fallback) -> `docs/decisions/002-toolchain-license-and-gui-baseline.md`
+- [x] `LICENSE`, `rust-toolchain.toml`, `deny.toml`, `clippy.toml`, workspace `Cargo.toml` + crate scaffolds (`crates/{hidpp,squeak-core,squeakd,squeak-cli,squeak-gui}`)
+- [x] `.github/workflows/ci.yml` (fmt, clippy, test, doc, deny, MSRV 1.89, distro container matrix)
+- [x] `README.md`, `CONTRIBUTING.md`, `docs/dev-setup.md`
+- [x] M0 quality gate green & hostile self-review
 
 ## M1 – `hidpp` Core
 - [ ] Frame encode/decode (`0x10` short 7B, `0x11` long 20B, `0x12` very long 64B) + bounds validation
