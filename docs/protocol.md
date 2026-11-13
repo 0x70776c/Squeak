@@ -47,7 +47,27 @@
 | `RGB_EFFECTS` | `0x8071` | M5 |
 | `ONBOARD_PROFILES` | `0x8100` | M6 |
 
+## M3 Feature Wire Notes
+- **`0x0003` (`FIRMWARE_INFO`, v0..=v4):**
+  - `fn0` `getDeviceInfo`: returns `entityCount`, optional `unitId` (v1+, bytes `[1..5]` — **always discarded** for privacy), `transport` flags (byte `5`, bitmask `BTLE | eQuad | BT | USB`), `modelId` (`[6..12]`), and `extendedModelId` (byte `12`).
+  - `fn1` `getFwInfo(entityIdx)`: returns `type & 0x0F` (MainApplication, Bootloader, Hardware, Touchpad, SoftDevice, RfCompanion, FactoryApplication, HexFile), 3-byte ASCII prefix (`[1..4]`), BCD `fw_number` (`[4]`), BCD `revision` (`[5]`), BE `u16` `build` (`[6..8]`), `active` (`[8] & 0x01`, MainApplication/SoftDevice), and `trPid` (`[9..11]` BE `u16`).
+- **`0x0005` (`DEVICE_NAME`, v0):**
+  - `fn0` `getDeviceNameCount`: returns byte length (`params[0]`).
+  - `fn1` `getDeviceName(charIndex)`: returns UTF-8 chunk directly in `params[..]` (no leading offset byte); assemble up to declared count.
+  - `fn2` `getDeviceType`: returns enum byte (`0..=9`: Keyboard, RemoteControl, Numpad, Mouse, Trackpad, Trackball, Presenter, Receiver, Headset, Webcam).
+- **`0x1000` (`BATTERY_STATUS`, v0..=v1) & `0x1004` (`UNIFIED_BATTERY`, v0..=v5):**
+  - `0x1000` `fn0` (`getBatteryLevelStatus`): `[level%, next_level%, charging_status]`; `fn1` (`getBatteryCapability`): flags & nominal voltage / level count. Fallback heuristic when `0x1004` is absent.
+  - `0x1004` `fn0` (`getCapabilities`): `[supported_levels_mask, flags]`; `fn1` (`getStatus`): `[state_of_charge (0..=100), battery_level_bucket, charging_status, external_power]`. Preferred over `0x1000` when both exist.
+- **`0x2201` (`ADJUSTABLE_DPI`, v0..=v2):**
+  - `fn0` `getSensorCount`: `[count]`
+  - `fn1` `getSensorDpiList(sensorIdx)`: `[sensor_idx, u16_be... , 0x0000]`. Stepped ranges encode as `[min, 0xE000 | step, max]`; max protocol DPI is `51200` (`> 0xC800` / `< 0xE000`).
+  - `fn2` `getSensorDpi(sensorIdx)`: `[sensor_idx, dpi_hi, dpi_lo, default_dpi_hi, default_dpi_lo]` (`default_dpi == 0` in v0).
+  - `fn3` `setSensorDpi(sensorIdx, dpi)`: `[sensor_idx, dpi_hi, dpi_lo]` (echoes on v1+, no echo on v0). Always followed by mandatory `getSensorDpi` readback verification.
+- **`0x8060` (`REPORT_RATE`, v0) & `0x8061` (`EXTENDED_REPORT_RATE`, v0):**
+  - `0x8060`: `fn0` `getReportRateList` -> 8-bit bitmask (`bit i` = `(i + 1)` ms); `fn1` `getReportRate` -> `ms` (`1..=8`); `fn2` `setReportRate(ms)`.
+  - `0x8061`: `fn1` `getReportRateList` -> BE `u16` bitmask (`bit 0` = 8 ms / 125 Hz .. `bit 6` = 125 us / 8000 Hz); `fn2` `getReportRate` -> code (`0..=6`); `fn3` `setReportRate(code)`.
+
 ## Reference Sources (read-only; no copied code)
-- Logitech public HID++ 2.0 protocol specification drafts
-- Solaar (`lib/logitech_receiver/` — protocol behavior reference only)
+- Logitech public HID++ 2.0 protocol specification drafts (`x0003_deviceinfo.html`, `x2201_adjustabledpi.html` via `Logitech/lekensteyn` HID++ 2.0 specification repository)
+- Solaar (`lib/logitech_receiver/hidpp20.py`, `descriptors.py`, `settings_templates.py` — protocol behavior reference only)
 - libratbag (`src/driver-hidpp20.c` — protocol behavior reference only)

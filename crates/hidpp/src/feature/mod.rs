@@ -1,7 +1,12 @@
 //! Runtime HID++ 2.0 feature definitions, identifiers, flags, and discovery table.
 
+pub mod adjustable_dpi;
+pub mod battery;
 pub mod cache;
+pub mod device_name;
 pub mod feature_set;
+pub mod firmware_info;
+pub mod report_rate;
 pub mod root;
 
 use core::fmt;
@@ -10,8 +15,26 @@ use tracing::warn;
 
 use crate::frame::FeatureIndex;
 
+pub use adjustable_dpi::{
+    AdjustableDpiDriver, AdjustableDpiFeature, Dpi, DpiCapabilities, DpiRange,
+    DpiWriteVerification, MAX_PROTOCOL_DPI, SensorDpiState,
+};
+pub use battery::{
+    BatteryCapability, BatteryChargingStatus, BatteryFeature, BatteryLevelBucket, BatteryPercent,
+    BatteryReading, BatteryStatusDriver, BatteryStatusReply, UnifiedBatteryCapabilities,
+    UnifiedBatteryDriver, UnifiedBatteryStatus, read_battery,
+};
 pub use cache::{FeatureCache, FeatureTable};
+pub use device_name::{DeviceNameDriver, DeviceNameFeature, HidppDeviceType};
 pub use feature_set::IFeatureSet;
+pub use firmware_info::{
+    DeviceFirmwareSummary, FirmwareEntity, FirmwareEntityKind, FirmwareInfoDriver,
+    FirmwareInfoFeature, FirmwareInventory, TransportCapabilities,
+};
+pub use report_rate::{
+    ExtendedReportRateDriver, ReportRate, ReportRateDriver, ReportRateFeature, ReportRateState,
+    ReportRateWriteVerification, read_report_rate, set_report_rate_verified,
+};
 pub use root::{IRoot, ResolvedFeature};
 
 /// 16-bit HID++ 2.0 feature identifier (for example `0x0000` for `IRoot`).

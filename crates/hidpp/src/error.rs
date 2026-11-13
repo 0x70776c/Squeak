@@ -415,6 +415,37 @@ pub enum ProtocolError {
         feature_id: FeatureId,
     },
 
+    /// Device reports a newer feature version than this driver supports for safe writes.
+    #[error(
+        "feature {feature_id} reports version {version} > max supported {max_supported}; write refused (read-only fallback)"
+    )]
+    UnsupportedFeatureVersion {
+        /// Feature identifier.
+        feature_id: FeatureId,
+        /// Firmware-reported feature revision.
+        version: u8,
+        /// Highest revision verified safe for mutating writes.
+        max_supported: u8,
+    },
+
+    /// Caller supplied an out-of-range or unsupported parameter value.
+    #[error("invalid protocol argument: {detail}")]
+    InvalidArgument {
+        /// Explanation of the invalid value.
+        detail: String,
+    },
+
+    /// Post-write readback from the device did not match the requested value.
+    #[error("readback verification failed for {feature_id}: expected {expected}, got {actual}")]
+    ReadbackMismatch {
+        /// Feature identifier.
+        feature_id: FeatureId,
+        /// Requested target value.
+        expected: String,
+        /// Value observed during post-write readback.
+        actual: String,
+    },
+
     /// Device returned [`Hidpp20ErrorCode::Busy`] past the configured retry budget.
     #[error(
         "device busy retries exhausted for feature {feature_index} {function_id} after {attempts} attempts"

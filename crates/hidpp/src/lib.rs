@@ -26,8 +26,16 @@ pub use error::{
     TransportError,
 };
 pub use feature::{
-    FeatureCache, FeatureEntry, FeatureFlags, FeatureId, FeatureTable, HidppFeature, IFeatureSet,
-    IRoot, ProtocolVersion, ResolvedFeature,
+    AdjustableDpiDriver, AdjustableDpiFeature, BatteryCapability, BatteryChargingStatus,
+    BatteryFeature, BatteryLevelBucket, BatteryPercent, BatteryReading, BatteryStatusDriver,
+    BatteryStatusReply, DeviceFirmwareSummary, DeviceNameDriver, DeviceNameFeature, Dpi,
+    DpiCapabilities, DpiRange, DpiWriteVerification, ExtendedReportRateDriver, FeatureCache,
+    FeatureEntry, FeatureFlags, FeatureId, FeatureTable, FirmwareEntity, FirmwareEntityKind,
+    FirmwareInfoDriver, FirmwareInfoFeature, FirmwareInventory, HidppDeviceType, HidppFeature,
+    IFeatureSet, IRoot, MAX_PROTOCOL_DPI, ProtocolVersion, ReportRate, ReportRateDriver,
+    ReportRateFeature, ReportRateState, ReportRateWriteVerification, ResolvedFeature,
+    SensorDpiState, TransportCapabilities, UnifiedBatteryCapabilities, UnifiedBatteryDriver,
+    UnifiedBatteryStatus, read_battery, read_report_rate, set_report_rate_verified,
 };
 pub use frame::{
     DeviceIndex, FeatureIndex, FunctionId, HidppFrame, LONG_PARAM_LEN, LONG_REPORT_LEN,
