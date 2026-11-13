@@ -557,6 +557,7 @@ pub fn build_profiles_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> ad
     page.set_icon_name(Some("drive-harddisk-symbolic"));
 
     let Some(profiles) = &snap.profiles else {
+        add_software_profiles_groups(&page, snap, backend);
         return page;
     };
 
@@ -622,7 +623,150 @@ pub fn build_profiles_page(snap: &DeviceSnapshot, backend: &BackendHandle) -> ad
     }
     page.add(&slots_group);
 
+    add_software_profiles_groups(&page, snap, backend);
+
     page
+}
+
+fn add_software_profiles_groups(
+    page: &adw::PreferencesPage,
+    snap: &DeviceSnapshot,
+    backend: &BackendHandle,
+) {
+    let create_group = adw::PreferencesGroup::new();
+    create_group.set_title(tr("Software Profiles (Auto-Switch)"));
+    create_group.set_description(Some(tr(
+        "XDG TOML profiles in ~/.config/squeak/profiles/ with per-app window matching",
+    )));
+
+    let name_row = adw::ActionRow::new();
+    name_row.set_title(tr("Profile Name"));
+    let name_entry = gtk4::Entry::new();
+    name_entry.set_placeholder_text(Some("e.g. gaming"));
+    name_entry.set_valign(Align::Center);
+    name_row.add_suffix(&name_entry);
+    create_group.add(&name_row);
+
+    let apps_row = adw::ActionRow::new();
+    apps_row.set_title(tr("Match Apps"));
+    apps_row.set_subtitle(tr("Comma-separated WM class or window title patterns"));
+    let apps_entry = gtk4::Entry::new();
+    apps_entry.set_placeholder_text(Some("firefox, steam_app_730"));
+    apps_entry.set_valign(Align::Center);
+    apps_row.add_suffix(&apps_entry);
+    create_group.add(&apps_row);
+
+    let dpi_row = adw::ActionRow::new();
+    dpi_row.set_title(tr("Target DPI"));
+    let dpi_adj = Adjustment::new(1000.0, 100.0, 25600.0, 50.0, 200.0, 0.0);
+    let dpi_spin = SpinButton::new(Some(&dpi_adj), 50.0, 0);
+    dpi_spin.set_valign(Align::Center);
+    dpi_row.add_suffix(&dpi_spin);
+    create_group.add(&dpi_row);
+
+    let rate_row = adw::ActionRow::new();
+    rate_row.set_title(tr("Report Rate"));
+    let rate_list = StringList::new(&["1000 Hz", "500 Hz", "250 Hz", "125 Hz"]);
+    let rate_dropdown = DropDown::new(Some(rate_list), gtk4::Expression::NONE);
+    rate_dropdown.set_valign(Align::Center);
+    rate_row.add_suffix(&rate_dropdown);
+    create_group.add(&rate_row);
+
+    let save_row = adw::ActionRow::new();
+    save_row.set_title(tr("Save Software Profile"));
+    let save_btn = Button::with_label(tr("Save"));
+    save_btn.add_css_class("suggested-action");
+    save_btn.set_valign(Align::Center);
+    let key = snap.summary.device_key.clone();
+    let b = backend.clone();
+    save_btn.connect_clicked(move |_| {
+        let name = name_entry.text().trim().to_owned();
+        if name.is_empty() {
+            return;
+        }
+        let match_apps = apps_entry
+            .text()
+            .split(',')
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+        let dpi = dpi_spin.value().round().clamp(100.0, 25600.0) as u16;
+        let hz = match rate_dropdown.selected() {
+            1 => 500,
+            2 => 250,
+            3 => 125,
+            _ => 1000,
+        };
+        let mut profile = squeak_core::SoftwareProfile::new(name);
+        profile.match_apps = match_apps;
+        profile.dpi = Some(dpi);
+        profile.report_rate_hz = Some(hz);
+        profile.onboard_mode = Some("host".to_owned());
+        b.send(UiCommand::SaveSoftwareProfile {
+            device_key: key.clone(),
+            profile,
+        });
+    });
+    save_row.add_suffix(&save_btn);
+    create_group.add(&save_row);
+    page.add(&create_group);
+
+    let saved_group = adw::PreferencesGroup::new();
+    saved_group.set_title(tr("Saved Software Profiles"));
+    if snap.software_profiles.is_empty() {
+        let empty = adw::ActionRow::new();
+        empty.set_title(tr("No software profiles saved yet"));
+        saved_group.add(&empty);
+    } else {
+        for sw in &snap.software_profiles {
+            let row = adw::ActionRow::new();
+            row.set_title(&sw.name);
+            let apps = if sw.match_apps.is_empty() {
+                "-".to_owned()
+            } else {
+                sw.match_apps.join(", ")
+            };
+            row.set_subtitle(&format!(
+                "DPI {} · {} Hz · apps: {}",
+                sw.dpi.map_or_else(|| "-".to_owned(), |v| v.to_string()),
+                sw.report_rate_hz
+                    .map_or_else(|| "-".to_owned(), |v| v.to_string()),
+                apps
+            ));
+
+            let btn_box = GtkBox::new(Orientation::Horizontal, 6);
+            btn_box.set_valign(Align::Center);
+
+            let apply_btn = Button::with_label(tr("Apply"));
+            let key = snap.summary.device_key.clone();
+            let b = backend.clone();
+            let pname = sw.name.clone();
+            apply_btn.connect_clicked(move |_| {
+                b.send(UiCommand::ApplySoftwareProfile {
+                    device_key: key.clone(),
+                    profile_name: pname.clone(),
+                });
+            });
+
+            let del_btn = Button::with_label(tr("Delete"));
+            del_btn.add_css_class("destructive-action");
+            let key = snap.summary.device_key.clone();
+            let b = backend.clone();
+            let pname = sw.name.clone();
+            del_btn.connect_clicked(move |_| {
+                b.send(UiCommand::DeleteSoftwareProfile {
+                    device_key: key.clone(),
+                    profile_name: pname.clone(),
+                });
+            });
+
+            btn_box.append(&apply_btn);
+            btn_box.append(&del_btn);
+            row.add_suffix(&btn_box);
+            saved_group.add(&row);
+        }
+    }
+    page.add(&saved_group);
 }
 
 /// Builds the Scroll Wheel page (`0x2110` SmartShift / `0x2121` HiRes Wheel).

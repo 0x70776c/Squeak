@@ -14,7 +14,7 @@ squeak dump-device --json > my-mouse-dump.json
 
 ## 2. Create `data/devices/<slug>.toml`
 
-Use [g502-hero.toml](file:///home/paweldev/Downloads/Antigravity-x64/Projectts/Squeak/data/devices/g502-hero.toml) and [data/devices/README.md](file:///home/paweldev/Downloads/Antigravity-x64/Projectts/Squeak/data/devices/README.md) as references:
+Use [g502-hero.toml](../data/devices/g502-hero.toml) and [data/devices/README.md](../data/devices/README.md) as references:
 
 - Set unique `vendor_id` and `product_id` values.
 - Optionally specify `svg = "<slug>.svg"` (must be a plain filename inside `data/devices/`).

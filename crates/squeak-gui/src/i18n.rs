@@ -94,6 +94,21 @@ pub fn tr_for(locale: Locale, msgid: &'static str) -> &'static str {
         "Backup created" => "Backup erstellt",
         "Click a button on the mouse diagram" => "Taste im Mausdiagramm anklicken",
         "Highlight" => "Hervorheben",
+        "Software Profiles (Auto-Switch)" => "Software-Profile (Auto-Wechsel)",
+        "XDG TOML profiles in ~/.config/squeak/profiles/ with per-app window matching" => {
+            "XDG-TOML-Profile in ~/.config/squeak/profiles/ mit App-Fenster-Erkennung"
+        }
+        "Profile Name" => "Profilname",
+        "Match Apps" => "Apps zuordnen",
+        "Comma-separated WM class or window title patterns" => {
+            "Kommagetrennte WM-Class- oder Fenstertitel-Muster"
+        }
+        "Target DPI" => "Ziel-DPI",
+        "Save Software Profile" => "Software-Profil speichern",
+        "Save" => "Speichern",
+        "Saved Software Profiles" => "Gespeicherte Software-Profile",
+        "No software profiles saved yet" => "Noch keine Software-Profile gespeichert",
+        "Delete" => "Löschen",
         _ => msgid,
     }
 }

@@ -10,6 +10,7 @@ use squeak_core::{
     ButtonsReport, DaemonDeviceSummary, DeviceStatusReport, DpiWriteReport, LedConfigReport,
     LedWriteReport, OnboardModeReport, OnboardModeWriteReport, ProfileBackupReport,
     ProfileSetActiveReport, ProfilesListReport, ReportRateWriteReport, ScrollConfigReport,
+    SoftwareProfile,
 };
 use zbus::Connection;
 
@@ -134,6 +135,23 @@ mod proxy_iface {
 
         /// Reads scroll wheel capabilities and settings.
         fn get_scroll_config(&self, device_key: &str) -> zbus::Result<String>;
+
+        /// Lists XDG TOML software profiles as JSON array.
+        fn list_software_profiles(&self) -> zbus::Result<String>;
+
+        /// Saves a TOML-encoded software profile.
+        fn save_software_profile(&self, toml_str: &str) -> zbus::Result<String>;
+
+        /// Deletes an XDG TOML software profile by name.
+        fn delete_software_profile(&self, profile_name: &str) -> zbus::Result<String>;
+
+        /// Applies (or dry-runs) a named XDG software profile to `device_key`.
+        fn apply_software_profile(
+            &self,
+            device_key: &str,
+            profile_name: &str,
+            dry_run: bool,
+        ) -> zbus::Result<String>;
 
         /// Re-scans endpoints.
         fn refresh_devices(&self) -> zbus::Result<u32>;
@@ -353,6 +371,50 @@ impl DaemonClient {
     /// Returns [`ClientError`] on D-Bus or JSON failure.
     pub async fn get_buttons(&self, device_key: &str) -> Result<ButtonsReport, ClientError> {
         parse_json(&self.proxy.get_buttons(device_key).await?)
+    }
+
+    /// Lists all XDG TOML software profiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError`] on D-Bus or JSON failure.
+    pub async fn list_software_profiles(&self) -> Result<Vec<SoftwareProfile>, ClientError> {
+        parse_json(&self.proxy.list_software_profiles().await?)
+    }
+
+    /// Saves a TOML-encoded software profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError`] on D-Bus failure.
+    pub async fn save_software_profile(&self, toml_str: &str) -> Result<String, ClientError> {
+        Ok(self.proxy.save_software_profile(toml_str).await?)
+    }
+
+    /// Deletes an XDG TOML software profile by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError`] on D-Bus failure.
+    pub async fn delete_software_profile(&self, profile_name: &str) -> Result<String, ClientError> {
+        Ok(self.proxy.delete_software_profile(profile_name).await?)
+    }
+
+    /// Applies a named XDG software profile to `device_key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError`] on D-Bus failure.
+    pub async fn apply_software_profile(
+        &self,
+        device_key: &str,
+        profile_name: &str,
+        dry_run: bool,
+    ) -> Result<String, ClientError> {
+        Ok(self
+            .proxy
+            .apply_software_profile(device_key, profile_name, dry_run)
+            .await?)
     }
 
     /// Reads scroll wheel capabilities and settings.

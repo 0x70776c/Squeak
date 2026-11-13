@@ -6,7 +6,7 @@ Squeak discovers HID++ 2.0 features dynamically from connected hardware using `I
 
 | Device | VID:PID | Transport | Supported Capabilities | Definition |
 | --- | --- | --- | --- | --- |
-| G502 HERO | `046d:c08b` | Wired USB (`hidraw`) | DPI (`0x2201`), Report Rate (`0x8060`), RGB LEDs (`0x8070`), Onboard Profiles (`0x8100`), Buttons (`0x8110`/`0x1B04`), Interactive SVG | [g502-hero.toml](file:///home/paweldev/Downloads/Antigravity-x64/Projectts/Squeak/data/devices/g502-hero.toml) |
+| G502 HERO | `046d:c08b` | Wired USB (`hidraw`) | DPI (`0x2201`), Report Rate (`0x8060`), RGB LEDs (`0x8070`), Onboard Profiles (`0x8100`), Buttons (`0x8110`/`0x1B04`), Interactive SVG | [g502-hero.toml](../data/devices/g502-hero.toml) |
 
 ## Generic HID++ 2.0 Fallback
 

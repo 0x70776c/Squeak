@@ -8,6 +8,7 @@ use squeak_core::{
     ButtonsReport, DaemonDeviceSummary, DeviceStatusReport, DpiWriteReport, LedConfigReport,
     LedWriteReport, OnboardModeReport, OnboardModeWriteReport, ProfileBackupReport,
     ProfileSetActiveReport, ProfilesListReport, ReportRateWriteReport, ScrollConfigReport,
+    SoftwareProfile,
 };
 
 use crate::dbus_client::{ClientError, DaemonClient};
@@ -30,6 +31,8 @@ pub struct DeviceSnapshot {
     pub profiles: Option<ProfilesListReport>,
     /// Scroll wheel (`0x2110` / `0x2121`), if supported.
     pub scroll: Option<ScrollConfigReport>,
+    /// XDG TOML software profiles for host-side / per-app switching.
+    pub software_profiles: Vec<SoftwareProfile>,
 }
 
 /// Commands dispatched from the GTK UI thread to the background Tokio worker.
@@ -94,6 +97,27 @@ pub enum UiCommand {
     BackupProfiles {
         /// Target device key.
         device_key: String,
+    },
+    /// Save an XDG TOML software profile via `squeakd`.
+    SaveSoftwareProfile {
+        /// Currently selected device key (to refresh snapshot).
+        device_key: String,
+        /// Profile definition to save.
+        profile: SoftwareProfile,
+    },
+    /// Apply an XDG TOML software profile to `device_key` via `squeakd`.
+    ApplySoftwareProfile {
+        /// Target device key.
+        device_key: String,
+        /// Profile name.
+        profile_name: String,
+    },
+    /// Delete an XDG TOML software profile via `squeakd`.
+    DeleteSoftwareProfile {
+        /// Currently selected device key (to refresh snapshot).
+        device_key: String,
+        /// Profile name.
+        profile_name: String,
     },
     /// Run `pkexec squeak setup-udev` and then refresh devices.
     InstallUdevRule,
@@ -382,7 +406,67 @@ async fn handle_command(client: &DaemonClient, cmd: UiCommand, evt_tx: &Sender<U
                 }
             }
         }
+        UiCommand::SaveSoftwareProfile {
+            device_key,
+            profile,
+        } => match profile.to_toml_string() {
+            Ok(toml_str) => match client.save_software_profile(&toml_str).await {
+                Ok(_) => {
+                    let _ = evt_tx.send(UiEvent::ToastMessage(format!(
+                        "Saved software profile '{}'",
+                        profile.name
+                    )));
+                    reload_snapshot_by_key(client, &device_key, evt_tx).await;
+                }
+                Err(err) => {
+                    let _ = evt_tx.send(UiEvent::ToastMessage(err.to_string()));
+                }
+            },
+            Err(err) => {
+                let _ = evt_tx.send(UiEvent::ToastMessage(err.to_string()));
+            }
+        },
+        UiCommand::ApplySoftwareProfile {
+            device_key,
+            profile_name,
+        } => match client
+            .apply_software_profile(&device_key, &profile_name, false)
+            .await
+        {
+            Ok(_) => {
+                let _ = evt_tx.send(UiEvent::ToastMessage(format!(
+                    "Applied software profile '{profile_name}'"
+                )));
+                reload_snapshot_by_key(client, &device_key, evt_tx).await;
+            }
+            Err(err) => {
+                let _ = evt_tx.send(UiEvent::ToastMessage(err.to_string()));
+            }
+        },
+        UiCommand::DeleteSoftwareProfile {
+            device_key,
+            profile_name,
+        } => match client.delete_software_profile(&profile_name).await {
+            Ok(_) => {
+                let _ = evt_tx.send(UiEvent::ToastMessage(format!(
+                    "Deleted software profile '{profile_name}'"
+                )));
+                reload_snapshot_by_key(client, &device_key, evt_tx).await;
+            }
+            Err(err) => {
+                let _ = evt_tx.send(UiEvent::ToastMessage(err.to_string()));
+            }
+        },
         UiCommand::InstallUdevRule => {}
+    }
+}
+
+async fn reload_snapshot_by_key(client: &DaemonClient, device_key: &str, evt_tx: &Sender<UiEvent>) {
+    if let Ok(list) = client.list_devices().await
+        && let Some(summary) = list.into_iter().find(|d| d.device_key == device_key)
+    {
+        let snap = load_snapshot(client, summary).await;
+        let _ = evt_tx.send(UiEvent::DeviceSnapshotLoaded(Box::new(snap)));
     }
 }
 
@@ -394,6 +478,7 @@ async fn load_snapshot(client: &DaemonClient, summary: DaemonDeviceSummary) -> D
     let onboard_mode = client.get_onboard_mode(&key).await.ok();
     let profiles = client.list_profiles(&key).await.ok();
     let scroll = client.get_scroll_config(&key).await.ok();
+    let software_profiles = client.list_software_profiles().await.unwrap_or_default();
 
     DeviceSnapshot {
         summary,
@@ -403,6 +488,7 @@ async fn load_snapshot(client: &DaemonClient, summary: DaemonDeviceSummary) -> D
         onboard_mode,
         profiles,
         scroll,
+        software_profiles,
     }
 }
 
