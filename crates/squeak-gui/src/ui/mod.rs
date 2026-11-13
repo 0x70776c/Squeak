@@ -252,16 +252,16 @@ fn handle_ui_event(
     match evt {
         UiEvent::DevicesLoaded { devices, snapshot } => {
             spinner.set_spinning(false);
-            let names: Vec<&str> = devices.iter().map(|d| d.matched_name.as_str()).collect();
-            let model = StringList::new(&names);
-            device_dropdown.set_model(Some(&model));
-
+            let names: Vec<String> = devices.iter().map(|d| d.matched_name.clone()).collect();
             {
                 let mut st = state.borrow_mut();
                 st.devices = devices;
                 st.current_key = snapshot.as_ref().map(|s| s.summary.device_key.clone());
                 st.current_snapshot = snapshot.as_deref().cloned();
             }
+            let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let model = StringList::new(&name_refs);
+            device_dropdown.set_model(Some(&model));
 
             if let Some(snap) = snapshot {
                 render_snapshot(&snap, backend, content_stack, nav_list);
@@ -283,7 +283,8 @@ fn handle_ui_event(
         }
         UiEvent::DpiApplied(rep) => {
             if rep.applied && rep.verified {
-                if let Some(key) = state.borrow().current_key.clone()
+                let current_key = state.borrow().current_key.clone();
+                if let Some(key) = current_key
                     && rep.previous_dpi != rep.requested_dpi
                 {
                     state.borrow_mut().undo.push(UndoAction::Dpi {
@@ -302,7 +303,8 @@ fn handle_ui_event(
         }
         UiEvent::ReportRateApplied(rep) => {
             if rep.applied && rep.verified {
-                if let Some(key) = state.borrow().current_key.clone()
+                let current_key = state.borrow().current_key.clone();
+                if let Some(key) = current_key.clone()
                     && rep.previous_hz != rep.requested_hz
                 {
                     state.borrow_mut().undo.push(UndoAction::ReportRate {
@@ -316,7 +318,7 @@ fn handle_ui_event(
                     tr("Settings applied"),
                     rep.requested_hz
                 )));
-                if let Some(key) = state.borrow().current_key.clone() {
+                if let Some(key) = current_key {
                     backend.send(UiCommand::LoadDevice { device_key: key });
                 }
             }
@@ -333,11 +335,12 @@ fn handle_ui_event(
         }
         UiEvent::OnboardModeApplied(rep) => {
             if rep.applied && rep.verified {
-                if let Some(key) = state.borrow().current_key.clone()
+                let current_key = state.borrow().current_key.clone();
+                if let Some(key) = current_key.clone()
                     && rep.previous_mode != rep.requested_mode
                 {
                     state.borrow_mut().undo.push(UndoAction::OnboardMode {
-                        device_key: key.clone(),
+                        device_key: key,
                         previous_mode: rep.previous_mode,
                     });
                     undo_btn.set_sensitive(true);
@@ -347,14 +350,15 @@ fn handle_ui_event(
                     tr("Operating Mode"),
                     rep.requested_mode
                 )));
-                if let Some(key) = state.borrow().current_key.clone() {
+                if let Some(key) = current_key {
                     backend.send(UiCommand::LoadDevice { device_key: key });
                 }
             }
         }
         UiEvent::ActiveProfileApplied(rep) => {
             if rep.applied && rep.verified {
-                if let Some(key) = state.borrow().current_key.clone()
+                let current_key = state.borrow().current_key.clone();
+                if let Some(key) = current_key.clone()
                     && rep.previous_slot != rep.requested_slot
                 {
                     state.borrow_mut().undo.push(UndoAction::ActiveProfile {
@@ -368,7 +372,7 @@ fn handle_ui_event(
                     tr("Active Slot"),
                     rep.requested_slot
                 )));
-                if let Some(key) = state.borrow().current_key.clone() {
+                if let Some(key) = current_key {
                     backend.send(UiCommand::LoadDevice { device_key: key });
                 }
             }
