@@ -16,8 +16,11 @@
   - `0x0` is reserved for unsolicited device notifications/events.
   - Requests use a non-zero `sw_id` (`1..=15`) to correlate replies and discard unrelated notifications while awaiting a response.
 - **Errors (`feature_index == 0xFF`):**
-  - Payload: `[orig_feature_idx, orig_func_sw, error_code, ...]`
-  - Mapped to a typed `Hidpp20Error` (`InvalidArgument`, `OutOfRange`, `HwError`, `Busy`, etc.); `Busy` triggers bounded backoff retry.
+  - Wire layout: `[report_id, device_index, 0xFF, orig_feature_idx, orig_func_sw, error_code, ...]`
+  - Mapped to a typed `Hidpp20Error` (`InvalidArgument`, `OutOfRange`, `HardwareError`, `Busy`, etc.); `Busy` triggers bounded backoff retry.
+- **HID++ 1.0 Legacy Errors (`sub_id == 0x8F`):**
+  - Wire layout: `[0x10, device_index, 0x8F, orig_sub_id, orig_func_sw, err10_code, 0x00]`
+  - Mapped immediately during session matching / `IRoot` ping to `ProtocolError::LegacyDeviceNotSupported`.
 
 ## Runtime Discovery
 1. Query `IRoot` (feature index `0x00`, feature ID `0x0000`), function `1` (`ping`) -> returns protocol `(major, minor)`. HID++ 1.0 devices respond with an error and are classified as unsupported legacy devices.

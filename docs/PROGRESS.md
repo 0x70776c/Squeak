@@ -25,15 +25,23 @@ Status legend:
 - [x] M0 quality gate green & hostile self-review
 
 ## M1 – `hidpp` Core
-- [ ] Frame encode/decode (`0x10` short 7B, `0x11` long 20B, `0x12` very long 64B) + bounds validation
-- [ ] `HidTransport` trait + `MockTransport` (scripted replies, notifications, timeouts, busy injection)
-- [ ] Linux `hidraw` `HidTransport` implementation (pure non-blocking/timeout I/O)
-- [ ] HID++ 2.0 error frame (`0xFF`) mapping to typed `#[non_exhaustive]` `Hidpp20Error`
-- [ ] Request/response multiplexer (`sw_id` filtering, notification skipping, `Busy` backoff retry, timeouts)
-- [ ] `IRoot` (`0x0000`: `getFeature`, `ping`, protocol version, 1.0 legacy error)
-- [ ] `IFeatureSet` (`0x0001`: `getCount`, `getFeatureID`) + feature table cache & invalidation
-- [ ] Golden-frame unit tests + `proptest` roundtrips
-- [ ] M1 quality gate green & hostile self-review
+- [x] Frame encode/decode (`0x10` short 7B, `0x11` long 20B, `0x12` very long 64B) + bounds validation
+- [x] `HidTransport` trait + `MockTransport` (scripted replies, notifications, timeouts, busy injection)
+- [x] Linux `hidraw` `HidTransport` implementation (pure non-blocking/timeout I/O)
+- [x] HID++ 2.0 error frame (`0xFF`) mapping to typed `#[non_exhaustive]` `Hidpp20Error`
+- [x] Request/response multiplexer (`sw_id` filtering, notification skipping, `Busy` backoff retry, timeouts)
+- [x] `IRoot` (`0x0000`: `getFeature`, `ping`, protocol version, 1.0 legacy error)
+- [x] `IFeatureSet` (`0x0001`: `getCount`, `getFeatureID`) + feature table cache & invalidation
+- [x] Golden-frame unit tests + `proptest` roundtrips
+- [x] M1 quality gate green & hostile self-review
+
+> **M1 Summary**
+> - **Done:** `#![forbid(unsafe_code)]` `hidpp` crate with wire framing (`0x10`/`0x11`/`0x12`), HID report descriptor + sysfs `uevent` parsers, safe `rustix` `HidrawTransport`, `MockTransport`, `HidppSession` multiplexer (`sw_id` correlation, `Busy` exponential backoff, legacy `0x8F` detection), `IRoot` (`0x0000`), `IFeatureSet` (`0x0001`), and `FeatureTable`/`FeatureCache`.
+> - **Tested:** `cargo fmt --check`, `clippy --all-targets -- -D warnings`, `cargo doc --no-deps`, and 38 workspace tests (golden frames, proptests, malformed lengths/descriptors, busy retries, continuous notifications, dynamic non-hardcoded `IFeatureSet` index, and mock sysfs discovery).
+> - **Needs hardware:** Live Linux `/dev/hidraw*` poll/read/write verification against physical G502 HERO (covered by M2 `[NEEDS-HW]` script).
+> - **Risks:** Physical devices sharing one `hidraw` endpoint with consumer/keyboard HID reports may inject non-HID++ packets (`trace`-skipped in `HidrawTransport::read_frame`, `[NEEDS-HW]`).
+> - **Next:** M2 — device TOML validator + generic fallback in `squeak-core`, provisional `data/devices/g502-hero.toml`, and `squeak` CLI (`list`, `info`, `dump-device`, `setup-udev`).
+
 
 ## M2 – CLI + `dump-device` + G502 HERO Device Data
 - [ ] Device TOML loader & schema validator (`squeak-core`: `data/devices/*.toml`, unique PIDs, generic fallback)

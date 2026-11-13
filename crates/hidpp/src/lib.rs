@@ -1,20 +1,39 @@
 //! Pure HID++ 2.0 protocol library for Squeak.
 //!
-//! This crate intentionally has no GUI, udev, or D-Bus dependencies. All I/O goes
-//! through a `HidTransport` trait implemented by both Linux `hidraw` and test mocks.
+//! This crate intentionally has no GUI, `libudev`, or D-Bus dependencies. All hardware
+//! I/O passes through the [`HidTransport`] trait implemented by Linux `hidraw`
+//! ([`HidrawTransport`]) and in-memory test mocks ([`MockTransport`]).
+//!
+//! # Key Guarantees
+//!
+//! - Safe Rust only (`#![forbid(unsafe_code)]`).
+//! - Runtime feature discovery via [`IRoot`] (`0x0000`) and [`IFeatureSet`] (`0x0001`);
+//!   feature indices are never hardcoded and devices never branch on model.
+//! - Serial numbers (`HID_UNIQ`) are never collected, retained, or logged.
 
-/// Returns the crate name for smoke-test verification.
-#[must_use]
-pub const fn crate_name() -> &'static str {
-    "hidpp"
-}
+#![forbid(unsafe_code)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod descriptor;
+pub mod error;
+pub mod feature;
+pub mod frame;
+pub mod hidraw;
+pub mod session;
+pub mod transport;
 
-    #[test]
-    fn smoke() {
-        assert_eq!(crate_name(), "hidpp");
-    }
-}
+pub use error::{
+    Hidpp10Error, Hidpp10ErrorCode, Hidpp20Error, Hidpp20ErrorCode, HidppError, ProtocolError,
+    TransportError,
+};
+pub use feature::{
+    FeatureCache, FeatureEntry, FeatureFlags, FeatureId, FeatureTable, HidppFeature, IFeatureSet,
+    IRoot, ProtocolVersion, ResolvedFeature,
+};
+pub use frame::{
+    DeviceIndex, FeatureIndex, FunctionId, HidppFrame, LONG_PARAM_LEN, LONG_REPORT_LEN,
+    MAX_REPORT_LEN, ReportId, SHORT_PARAM_LEN, SHORT_REPORT_LEN, SupportedReports, SwId,
+    VERY_LONG_PARAM_LEN, VERY_LONG_REPORT_LEN,
+};
+pub use hidraw::{HIDPP_VENDOR_ID, HidrawTransport, discover_hidpp_devices};
+pub use session::{HidppSession, SessionConfig};
+pub use transport::{BusType, HidDeviceInfo, HidTransport, MockTransport};
