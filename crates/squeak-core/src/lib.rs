@@ -1,17 +1,16 @@
-//! Shared domain models and data-driven device definitions for Squeak.
+//! Shared domain models, data-driven device definitions (`data/devices/*.toml`),
+//! and sanitized dump schemas for Squeak.
 
-/// Returns the crate name for smoke-test verification.
-#[must_use]
-pub const fn crate_name() -> &'static str {
-    "squeak-core"
-}
+#![forbid(unsafe_code)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod device_data;
+pub mod dump;
 
-    #[test]
-    fn smoke() {
-        assert_eq!(crate_name(), "squeak-core");
-    }
-}
+pub use device_data::{
+    ButtonDefinition, DeviceDataError, DeviceDatabase, DeviceDefinition, DeviceKind, DeviceQuirks,
+    GenericDeviceProfile, ResolvedDevice, button_label_map, extract_svg_ids,
+};
+pub use dump::{
+    DUMP_SCHEMA_VERSION, DefinitionMatchKind, DeviceDump, DeviceIdentityDump, DeviceInfoReport,
+    DeviceListEntry, FeatureDumpEntry, FeatureFlagSummary, ProbeStatus,
+};

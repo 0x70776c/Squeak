@@ -567,7 +567,7 @@ dependencies = [
  "serde",
  "serde_json",
  "squeak-core",
- "tracing",
+ "thiserror",
  "tracing-subscriber",
 ]
 
@@ -577,6 +577,7 @@ version = "0.1.0"
 dependencies = [
  "hidpp",
  "serde",
+ "serde_json",
  "thiserror",
  "toml",
 ]

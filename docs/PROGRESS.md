@@ -44,15 +44,24 @@ Status legend:
 
 
 ## M2 – CLI + `dump-device` + G502 HERO Device Data
-- [ ] Device TOML loader & schema validator (`squeak-core`: `data/devices/*.toml`, unique PIDs, generic fallback)
-- [ ] `squeak-cli` (`squeak`): `list`, `info`, `dump-device`, `setup-udev` (`--dry-run`, `--json`)
-- [ ] Serial-number redaction / omission guarantee in `dump-device` output and logs
-- [ ] Initial `data/devices/g502-hero.toml` (PID `0xc08b` provisional until `[NEEDS-HW]` verified)
-- [ ] `[NEEDS-HW]` G502 HERO verification script & expected output in `docs/hw-tests-m2.md`
+- [x] Device TOML loader & schema validator (`squeak-core`: `data/devices/*.toml`, unique PIDs, generic fallback)
+- [x] `squeak-cli` (`squeak`): `list`, `info`, `dump-device`, `setup-udev` (`--dry-run`, `--json`)
+- [x] Serial-number redaction / omission guarantee in `dump-device` output and logs
+- [x] Initial `data/devices/g502-hero.toml` (PID `0xc08b` provisional until `[NEEDS-HW]` verified)
+- [x] `[NEEDS-HW]` G502 HERO verification guide & expected output in `docs/hw-tests-m2.md`
+- [ ] `[NEEDS-HW]` Physical G502 HERO hardware execution pending (`docs/hw-tests-m2.md`):
   - Verify PID: `lsusb | grep 046d`
+  - Install/verify udev access: `cargo run -p squeak-cli -- setup-udev --dry-run` / `setup-udev`
   - Enumerate: `cargo run -p squeak-cli -- list --json`
-  - Dump features: `cargo run -p squeak-cli -- dump-device --json`
-- [ ] M2 quality gate green & hostile self-review
+  - Inspect & dump features: `cargo run -p squeak-cli -- info` / `dump-device --json`
+- [x] M2 quality gate green & hostile self-review
+
+> **M2 Summary**
+> - **Done:** Implemented `squeak-core` device TOML catalog (`DeviceDatabase`, SVG path/element ID validation, duplicate VID:PID checks, generic fallback) and sanitized schemas (`DeviceDump`, `DeviceInfoReport`, `DeviceListEntry`), provisional `data/devices/g502-hero.toml`, `squeak` CLI (`list`, `info`, `dump-device`, `setup-udev` via `pkexec`), `docs/hw-tests-m2.md`, and hostile-review hardening across `hidpp` (`hidraw` `Duration::MAX`/loop deadline checks, `IFeatureSet` v0/255 clamping, receiver `0x8F` offline/`Busy` distinction).
+> - **Tested:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`, `RUSTFLAGS="-D unused-crate-dependencies" cargo check -p hidpp -p squeak-core -p squeak-cli --lib --bins`, license audit (`deny.toml`), CLI smoke runs (`--help`, `list --json`, `setup-udev --dry-run --json`), and 59 workspace tests (`41` `hidpp`, `5` `squeak-core`, `11` `squeak-cli`, `1` `squeakd`, `1` `squeak-gui`).
+> - **Needs hardware:** Execute `lsusb | grep 046d`, `setup-udev`, `list --json`, `info`, and `dump-device --json` against physical G502 HERO on Fedora/Wayland (`[NEEDS-HW]` in `docs/hw-tests-m2.md`).
+> - **Risks:** Provisional PID `0xc08b` and button CIDs (`0x00c3`..`0x005d`) in `g502-hero.toml` await live hardware verification; non-HID++ packet skipping on shared endpoints untested on real hardware.
+> - **Next:** Run `[NEEDS-HW]` M2 verification on G502 HERO and report output before beginning M3 (`FIRMWARE_INFO`, `DEVICE_NAME`, battery, DPI, report rate).
 
 ## M3 – Read/Write Basics (STOP/ASK before first real write)
 - [ ] `FIRMWARE_INFO` (`0x0003`) & `DEVICE_NAME` (`0x0005`)

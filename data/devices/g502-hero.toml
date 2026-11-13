@@ -1,0 +1,67 @@
+# Provisional device presentation & button layout for G502 HERO.
+# [NEEDS-HW]: Verify USB VID:PID (`lsusb | grep 046d`) and button CIDs against hardware
+# via `squeak dump-device --json` (M2) and `REPROG_CONTROLS_V4` enumeration (M5).
+
+name = "G502 HERO"
+vendor_id = 0x046d
+product_ids = [0xc08b] # [NEEDS-HW]: confirm exact PID on physical unit
+kind = "mouse"
+# svg = "g502-hero.svg" # Deferred until M7 GUI; falls back to generic mouse diagram
+
+[[buttons]]
+cid = 0x0050
+label = "Left click"
+svg_id = "btn-left"
+
+[[buttons]]
+cid = 0x0051
+label = "Right click"
+svg_id = "btn-right"
+
+[[buttons]]
+cid = 0x0052
+label = "Middle click"
+svg_id = "btn-middle"
+
+[[buttons]]
+cid = 0x0053
+label = "Back (G4)"
+svg_id = "btn-back"
+
+[[buttons]]
+cid = 0x0056
+label = "Forward (G5)"
+svg_id = "btn-forward"
+
+[[buttons]]
+cid = 0x00c3 # [NEEDS-HW]: provisional CID
+label = "DPI shift (Sniper)"
+svg_id = "btn-dpi-shift"
+
+[[buttons]]
+cid = 0x00c4 # [NEEDS-HW]: provisional CID
+label = "DPI down (G7)"
+svg_id = "btn-g7"
+
+[[buttons]]
+cid = 0x00c5 # [NEEDS-HW]: provisional CID
+label = "DPI up (G8)"
+svg_id = "btn-g8"
+
+[[buttons]]
+cid = 0x00d0 # [NEEDS-HW]: provisional CID
+label = "Profile cycle (G9)"
+svg_id = "btn-g9"
+
+[[buttons]]
+cid = 0x005b # [NEEDS-HW]: provisional CID
+label = "Scroll left"
+svg_id = "btn-scroll-left"
+
+[[buttons]]
+cid = 0x005d # [NEEDS-HW]: provisional CID
+label = "Scroll right"
+svg_id = "btn-scroll-right"
+
+[quirks]
+# Add proven firmware quirk flags here only with hardware issue links.

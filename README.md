@@ -28,7 +28,13 @@ Requires Rust **1.89+** (Edition 2024). See [docs/dev-setup.md](docs/dev-setup.m
 ```bash
 cargo test --workspace --all-features
 cargo run -p squeak-cli -- --help
+cargo run -p squeak-cli -- setup-udev --dry-run
+cargo run -p squeak-cli -- list
+cargo run -p squeak-cli -- info
+cargo run -p squeak-cli -- dump-device --json
 ```
+
+See [docs/hw-tests-m2.md](docs/hw-tests-m2.md) for `[NEEDS-HW]` hardware verification steps and expected output on physical devices.
 
 ## License
 
