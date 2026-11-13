@@ -61,7 +61,8 @@ Status legend:
 > - **Tested:** Quality gates + 59 workspace tests + live Fedora hardware verification on physical G502 SE HERO (`046d:c08b` on `/dev/hidraw6`, HID++ `4.2`, 20 features, zero serial numbers).
 > - **Needs hardware:** Completed for M2; button CIDs in `g502-hero.toml` remain `[NEEDS-HW]` for M5/M6 (`MOUSE_BUTTON_SPY` / `ONBOARD_PROFILES`).
 > - **Risks:** G502 HERO firmware lacks `0x1B04` (`REPROG_CONTROLS_V4`) and uses `0x8070` (`COLOR_LED_EFFECTS` v3) + `0x8100`/`0x8110` for buttons/profiles; M5/M6 must account for both `0x1B04` and `0x8100`-based mice.
-> - **Next:** M3 (`FIRMWARE_INFO` `0x0003`, `DEVICE_NAME` `0x0005`, `BATTERY_STATUS` `0x1000`, `UNIFIED_BATTERY` `0x1004`, `ADJUSTABLE_DPI` `0x2201`, `REPORT_RATE` `0x8060`, `EXTENDED_REPORT_RATE` `0x8061`, readback verification, and `--dry-run` CLI commands).
+> - **Completed M3:** Implemented `0x0003`/`0x0005`/`0x1000`/`0x1004`/`0x2201`/`0x8060`/`0x8061` drivers (61 `hidpp` tests), sanitized `squeak-core` M3 reports (7 tests), `squeak` CLI `status`/`dpi`/`report-rate` commands with default `--dry-run` guards (14 tests), and live G502 HERO verification (`/dev/hidraw6`: `status`, `0x2201` DPI write+readback `1200 -> 1600 -> 1200` passed; `0x8060` read `125..=1000 Hz` passed, while `0x8060 fn2` returned firmware `InvalidArgument (0x02)` in onboard-profile mode pending M6 `0x8100` Host-Mode switching).
+> - **Next:** M4 (`squeakd` — udev enumeration & hotplug monitor, device registry + runtime `FeatureTable` lifecycle, `zbus` DBus API `dev.squeak.Daemon` + `docs/dbus.md`, systemd/DBus activation units, integration tests).
 
 ## M3 – Read/Write Basics (STOP/ASK before first real write)
 - [x] `FIRMWARE_INFO` (`0x0003`) & `DEVICE_NAME` (`0x0005`)
@@ -69,7 +70,7 @@ Status legend:
 - [x] `ADJUSTABLE_DPI` (`0x2201`: sensor count, DPI list/range, get/set stages)
 - [x] `REPORT_RATE` (`0x8060`) & `EXTENDED_REPORT_RATE` (`0x8061`)
 - [x] Readback verification after writes + CLI read/write commands (`--dry-run` default/safe guards)
-- [ ] `[NEEDS-HW]` Verify DPI/report-rate readback on G502 HERO (ASK user before real write)
+- [x] `[NEEDS-HW]` Verify DPI/report-rate readback on G502 HERO (ASK user before real write) — `0x2201` write+readback `1200 <-> 1600 DPI` verified; `0x8060` read `1000 Hz` verified (`fn2` rejected with `0x02 InvalidArgument` while `0x8100` onboard mode active; host-mode switching scoped for M6)
 
 ## M4 – Daemon (`squeakd`)
 - [ ] udev enumeration & hotplug monitor
