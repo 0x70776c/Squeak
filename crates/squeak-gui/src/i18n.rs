@@ -1,7 +1,7 @@
 //! Internationalization (`i18n`) support for `squeak-gui` (English & German).
 //!
-//! Uses `LC_ALL` / `LC_MESSAGES` / `LANG` detection as the initial default and supports
-//! live runtime switching between English and German in the GUI.
+//! Defaults to English (`Locale::En`) on startup and supports live runtime switching
+//! between English and German in the GUI.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -15,24 +15,12 @@ pub enum Locale {
     De = 1,
 }
 
-static INITIALIZED: AtomicU8 = AtomicU8::new(0);
 static ACTIVE_LOCALE: AtomicU8 = AtomicU8::new(0);
 
 impl Locale {
-    /// Detects the initial locale from `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, or `LANG`.
+    /// Returns the default initial locale (`Locale::En`).
     #[must_use]
     pub fn detect() -> Self {
-        for var in ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"] {
-            if let Ok(val) = std::env::var(var) {
-                let lower = val.trim().to_ascii_lowercase();
-                if lower.starts_with("de") {
-                    return Self::De;
-                }
-                if lower.starts_with("en") || lower == "c" || lower == "posix" {
-                    return Self::En;
-                }
-            }
-        }
         Self::En
     }
 }
@@ -40,14 +28,6 @@ impl Locale {
 /// Returns the currently active UI [`Locale`].
 #[must_use]
 pub fn active_locale() -> Locale {
-    if INITIALIZED
-        .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
-        .is_ok()
-    {
-        let detected = Locale::detect();
-        ACTIVE_LOCALE.store(detected as u8, Ordering::Release);
-        return detected;
-    }
     match ACTIVE_LOCALE.load(Ordering::Acquire) {
         1 => Locale::De,
         _ => Locale::En,
@@ -56,7 +36,6 @@ pub fn active_locale() -> Locale {
 
 /// Sets the active UI [`Locale`] at runtime.
 pub fn set_locale(locale: Locale) {
-    INITIALIZED.store(1, Ordering::Release);
     ACTIVE_LOCALE.store(locale as u8, Ordering::Release);
 }
 
