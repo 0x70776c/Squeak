@@ -64,11 +64,11 @@ Status legend:
 > - **Next:** M3 (`FIRMWARE_INFO` `0x0003`, `DEVICE_NAME` `0x0005`, `BATTERY_STATUS` `0x1000`, `UNIFIED_BATTERY` `0x1004`, `ADJUSTABLE_DPI` `0x2201`, `REPORT_RATE` `0x8060`, `EXTENDED_REPORT_RATE` `0x8061`, readback verification, and `--dry-run` CLI commands).
 
 ## M3 – Read/Write Basics (STOP/ASK before first real write)
-- [~] `FIRMWARE_INFO` (`0x0003`) & `DEVICE_NAME` (`0x0005`)
-- [ ] `BATTERY_STATUS` (`0x1000`) & `UNIFIED_BATTERY` (`0x1004`)
-- [ ] `ADJUSTABLE_DPI` (`0x2201`: sensor count, DPI list/range, get/set stages)
-- [ ] `REPORT_RATE` (`0x8060`) & `EXTENDED_REPORT_RATE` (`0x8061`)
-- [ ] Readback verification after writes + CLI read/write commands (`--dry-run` default/safe guards)
+- [x] `FIRMWARE_INFO` (`0x0003`) & `DEVICE_NAME` (`0x0005`)
+- [x] `BATTERY_STATUS` (`0x1000`) & `UNIFIED_BATTERY` (`0x1004`)
+- [x] `ADJUSTABLE_DPI` (`0x2201`: sensor count, DPI list/range, get/set stages)
+- [x] `REPORT_RATE` (`0x8060`) & `EXTENDED_REPORT_RATE` (`0x8061`)
+- [x] Readback verification after writes + CLI read/write commands (`--dry-run` default/safe guards)
 - [ ] `[NEEDS-HW]` Verify DPI/report-rate readback on G502 HERO (ASK user before real write)
 
 ## M4 – Daemon (`squeakd`)

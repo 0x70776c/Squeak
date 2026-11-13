@@ -5,6 +5,7 @@
 
 pub mod device_data;
 pub mod dump;
+pub mod settings;
 
 pub use device_data::{
     ButtonDefinition, DeviceDataError, DeviceDatabase, DeviceDefinition, DeviceKind, DeviceQuirks,
@@ -13,4 +14,9 @@ pub use device_data::{
 pub use dump::{
     DUMP_SCHEMA_VERSION, DefinitionMatchKind, DeviceDump, DeviceIdentityDump, DeviceInfoReport,
     DeviceListEntry, FeatureDumpEntry, FeatureFlagSummary, ProbeStatus,
+};
+pub use settings::{
+    BatteryStatusReport, DeviceNameReport, DeviceStatusReport, DpiCapabilitiesReport,
+    DpiConfigReport, DpiRangeReport, DpiWriteReport, FirmwareEntityReport, FirmwareSummaryReport,
+    PlannedWireFrame, ReportRateConfigReport, ReportRateWriteReport, SensorDpiReport,
 };

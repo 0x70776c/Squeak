@@ -13,7 +13,12 @@ use squeak_core::{
 };
 use thiserror::Error;
 
-use crate::cli::{Cli, Command, ListArgs, TargetArgs};
+use crate::cli::{Cli, Command, DpiCommand, ListArgs, ReportRateCommand, TargetArgs};
+use crate::m3::{
+    dpi_get_from_transport, dpi_set_from_transport, format_dpi_get_human, format_dpi_set_human,
+    format_report_rate_get_human, format_report_rate_set_human, format_status_human,
+    report_rate_get_from_transport, report_rate_set_from_transport, status_from_transport,
+};
 use crate::udev::{UdevSetupError, format_setup_udev_human, run_setup_udev};
 
 const LIST_PING_DATA: u8 = 0x53;
@@ -47,6 +52,12 @@ pub enum CliError {
     Json(#[from] serde_json::Error),
 }
 
+impl From<ProtocolError> for CliError {
+    fn from(err: ProtocolError) -> Self {
+        Self::Hidpp(HidppError::Protocol(err))
+    }
+}
+
 /// Runs the parsed CLI command and prints output to stdout cleanly.
 ///
 /// # Errors
@@ -58,16 +69,68 @@ pub fn execute(cli: Cli) -> Result<String, CliError> {
     match cli.command {
         Command::List(args) => run_list(&args, &db, cli.json),
         Command::Info(args) => run_info(&args, &db, cli.json),
+        Command::Status(args) => run_status(&args, &db, cli.json),
+        Command::Dpi(args) => match args.action {
+            DpiCommand::Get(get_args) => {
+                let (device_index, transport) = open_selected_transport(&get_args.target)?;
+                let report = dpi_get_from_transport(transport, device_index, get_args.sensor)?;
+                format_output(&report, cli.json, format_dpi_get_human)
+            }
+            DpiCommand::Set(set_args) => {
+                let (device_index, transport) = open_selected_transport(&set_args.target)?;
+                let report = dpi_set_from_transport(
+                    transport,
+                    device_index,
+                    set_args.sensor,
+                    set_args.dpi,
+                    set_args.apply,
+                )?;
+                format_output(&report, cli.json, format_dpi_set_human)
+            }
+        },
+        Command::ReportRate(args) => match args.action {
+            ReportRateCommand::Get(target) => {
+                let (device_index, transport) = open_selected_transport(&target)?;
+                let report = report_rate_get_from_transport(transport, device_index)?;
+                format_output(&report, cli.json, format_report_rate_get_human)
+            }
+            ReportRateCommand::Set(set_args) => {
+                let (device_index, transport) = open_selected_transport(&set_args.target)?;
+                let report = report_rate_set_from_transport(
+                    transport,
+                    device_index,
+                    set_args.hz,
+                    set_args.apply,
+                )?;
+                format_output(&report, cli.json, format_report_rate_set_human)
+            }
+        },
         Command::DumpDevice(args) => run_dump_device(&args, &db, cli.json),
         Command::SetupUdev(args) => {
             let report = run_setup_udev(args.dry_run)?;
-            if cli.json {
-                Ok(serde_json::to_string_pretty(&report)?)
-            } else {
-                Ok(format_setup_udev_human(&report))
-            }
+            format_output(&report, cli.json, format_setup_udev_human)
         }
     }
+}
+
+fn format_output<T: serde::Serialize>(
+    value: &T,
+    as_json: bool,
+    human: fn(&T) -> String,
+) -> Result<String, CliError> {
+    if as_json {
+        Ok(serde_json::to_string_pretty(value)?)
+    } else {
+        Ok(human(value))
+    }
+}
+
+fn open_selected_transport(args: &TargetArgs) -> Result<(DeviceIndex, HidrawTransport), CliError> {
+    let device_index = parse_device_index(&args.device_index)?;
+    let discovered = discover_hidpp_devices()?;
+    let target = select_device(&discovered, args.device.as_deref())?.clone();
+    let transport = HidrawTransport::open(target)?;
+    Ok((device_index, transport))
 }
 
 fn run_list(args: &ListArgs, db: &DeviceDatabase, as_json: bool) -> Result<String, CliError> {
@@ -88,17 +151,15 @@ fn run_list(args: &ListArgs, db: &DeviceDatabase, as_json: bool) -> Result<Strin
 }
 
 fn run_info(args: &TargetArgs, db: &DeviceDatabase, as_json: bool) -> Result<String, CliError> {
-    let device_index = parse_device_index(&args.device_index)?;
-    let discovered = discover_hidpp_devices()?;
-    let target = select_device(&discovered, args.device.as_deref())?.clone();
-    let transport = HidrawTransport::open(target)?;
-
+    let (device_index, transport) = open_selected_transport(args)?;
     let (info_report, _dump) = discover_from_transport(transport, device_index, db)?;
-    if as_json {
-        Ok(serde_json::to_string_pretty(&info_report)?)
-    } else {
-        Ok(format_info_human(&info_report))
-    }
+    format_output(&info_report, as_json, format_info_human)
+}
+
+fn run_status(args: &TargetArgs, db: &DeviceDatabase, as_json: bool) -> Result<String, CliError> {
+    let (device_index, transport) = open_selected_transport(args)?;
+    let report = status_from_transport(transport, device_index, db)?;
+    format_output(&report, as_json, format_status_human)
 }
 
 fn run_dump_device(
@@ -106,17 +167,9 @@ fn run_dump_device(
     db: &DeviceDatabase,
     as_json: bool,
 ) -> Result<String, CliError> {
-    let device_index = parse_device_index(&args.device_index)?;
-    let discovered = discover_hidpp_devices()?;
-    let target = select_device(&discovered, args.device.as_deref())?.clone();
-    let transport = HidrawTransport::open(target)?;
-
+    let (device_index, transport) = open_selected_transport(args)?;
     let (_info_report, dump) = discover_from_transport(transport, device_index, db)?;
-    if as_json {
-        Ok(serde_json::to_string_pretty(&dump)?)
-    } else {
-        Ok(format_dump_human(&dump))
-    }
+    format_output(&dump, as_json, format_dump_human)
 }
 
 /// Parses `--device-index` accepting `"direct"`, `"0xff"`, `"255"`, or receiver slots `"1"..="6"`.

@@ -32,6 +32,16 @@ pub enum Command {
     /// Show protocol summary and discovered capability overview for one device.
     Info(TargetArgs),
 
+    /// Read live M3 capabilities and state (name, firmware, battery, DPI, report rate).
+    Status(TargetArgs),
+
+    /// Inspect or update adjustable sensor DPI (`0x2201`).
+    Dpi(DpiArgs),
+
+    /// Inspect or update polling report rate (`0x8060` / `0x8061`).
+    #[command(name = "report-rate")]
+    ReportRate(ReportRateArgs),
+
     /// Dump the complete runtime feature table for a device (without serial numbers).
     #[command(name = "dump-device")]
     DumpDevice(TargetArgs),
@@ -70,6 +80,98 @@ pub struct SetupUdevArgs {
     pub dry_run: bool,
 }
 
+/// Arguments for `squeak dpi`.
+#[derive(Debug, Args)]
+pub struct DpiArgs {
+    /// Action to perform on `ADJUSTABLE_DPI` (`0x2201`).
+    #[command(subcommand)]
+    pub action: DpiCommand,
+}
+
+/// Subcommands under `squeak dpi`.
+#[derive(Debug, Subcommand)]
+pub enum DpiCommand {
+    /// Read active DPI, default DPI, and supported DPI values/ranges.
+    Get(DpiGetArgs),
+
+    /// Set active DPI for a sensor (dry-run by default; pass `--apply` to write to hardware).
+    Set(DpiSetArgs),
+}
+
+/// Arguments for `squeak dpi get`.
+#[derive(Debug, Args)]
+pub struct DpiGetArgs {
+    /// Optional sensor index to filter (`0..sensor_count`). Reads all sensors when omitted.
+    #[arg(long)]
+    pub sensor: Option<u8>,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+/// Arguments for `squeak dpi set`.
+#[derive(Debug, Args)]
+pub struct DpiSetArgs {
+    /// Target DPI value (validated against the device's advertised DPI capabilities).
+    pub dpi: u16,
+
+    /// Sensor index to configure (`0` for standard single-sensor mice).
+    #[arg(long, default_value_t = 0)]
+    pub sensor: u8,
+
+    /// Actually transmit the write command to hardware and verify readback.
+    /// When omitted, `dpi set` performs capability validation and prints a `--dry-run` plan only.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+
+    /// Explicitly preview the validated write plan without sending any mutating frame (default).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+/// Arguments for `squeak report-rate`.
+#[derive(Debug, Args)]
+pub struct ReportRateArgs {
+    /// Action to perform on `REPORT_RATE` (`0x8060`) / `EXTENDED_REPORT_RATE` (`0x8061`).
+    #[command(subcommand)]
+    pub action: ReportRateCommand,
+}
+
+/// Subcommands under `squeak report-rate`.
+#[derive(Debug, Subcommand)]
+pub enum ReportRateCommand {
+    /// Read current and supported polling rates in Hz.
+    Get(TargetArgs),
+
+    /// Set polling rate in Hz (dry-run by default; pass `--apply` to write to hardware).
+    Set(ReportRateSetArgs),
+}
+
+/// Arguments for `squeak report-rate set`.
+#[derive(Debug, Args)]
+pub struct ReportRateSetArgs {
+    /// Target polling rate in Hz (e.g. `125`, `250`, `500`, `1000`, `2000`, `4000`, `8000`).
+    pub hz: u16,
+
+    /// Actually transmit the write command to hardware and verify readback.
+    /// When omitted, `report-rate set` performs capability validation and prints a `--dry-run` plan only.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+
+    /// Explicitly preview the validated write plan without sending any mutating frame (default).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Target device selection flags.
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
@@ -106,5 +208,37 @@ mod tests {
             udev.command,
             Command::SetupUdev(SetupUdevArgs { dry_run: true })
         ));
+
+        let status = Cli::try_parse_from(["squeak", "status", "--device", "046d:c08b"]).unwrap();
+        assert!(matches!(status.command, Command::Status(_)));
+
+        let dpi_set =
+            Cli::try_parse_from(["squeak", "dpi", "set", "1600", "--sensor", "0"]).unwrap();
+        match dpi_set.command {
+            Command::Dpi(DpiArgs {
+                action: DpiCommand::Set(args),
+            }) => {
+                assert_eq!(args.dpi, 1600);
+                assert_eq!(args.sensor, 0);
+                assert!(!args.apply);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from(["squeak", "dpi", "set", "1600", "--apply", "--dry-run"]).is_err()
+        );
+
+        let rr_set =
+            Cli::try_parse_from(["squeak", "report-rate", "set", "500", "--apply"]).unwrap();
+        match rr_set.command {
+            Command::ReportRate(ReportRateArgs {
+                action: ReportRateCommand::Set(args),
+            }) => {
+                assert_eq!(args.hz, 500);
+                assert!(args.apply);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 }
