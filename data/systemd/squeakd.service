@@ -1,0 +1,13 @@
+[Unit]
+Description=Squeak HID++ Hardware Daemon
+Documentation=https://github.com/0x70776c/Squeak
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/squeakd
+Restart=on-failure
+RestartSec=2s
+Slice=app.slice
+
+[Install]
+WantedBy=default.target

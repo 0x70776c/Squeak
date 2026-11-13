@@ -820,6 +820,7 @@ name = "squeakd"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "futures-lite",
  "hidpp",
  "rustix",
  "serde",

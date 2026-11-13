@@ -73,12 +73,19 @@ Status legend:
 - [x] `[NEEDS-HW]` Verify DPI/report-rate readback on G502 HERO (ASK user before real write) — `0x2201` write+readback `1200 <-> 1600 DPI` verified; `0x8060` read `1000 Hz` verified (`fn2` rejected with `0x02 InvalidArgument` while `0x8100` onboard mode active; host-mode switching scoped for M6)
 
 ## M4 – Daemon (`squeakd`)
-- [ ] udev enumeration & hotplug monitor
-- [ ] Device registry + runtime feature table lifecycle (reconnect/wake invalidation & re-apply)
-- [ ] Versioned DBus API (`dev.squeak.Daemon` via `zbus`), documented in `docs/dbus.md`
-- [ ] DBus activation service + systemd user unit, graceful shutdown, structured `tracing` logs (no serials)
-- [ ] Integration tests with `MockTransport` + isolated test DBus
+- [x] udev enumeration & hotplug monitor (`NETLINK_KOBJECT_UEVENT` pure `rustix` listener with debounce & shutdown)
+- [x] Device registry + runtime feature table lifecycle (reconnect/wake invalidation & persistent desired settings re-apply)
+- [x] Versioned DBus API (`dev.squeak.Daemon` via `zbus`), documented in `docs/dbus.md`
+- [x] DBus activation service + systemd user unit, graceful shutdown, structured `tracing` logs (no serials)
+- [x] Integration tests with `MockTransport` + deterministic registry state machine tests
 - [ ] `[NEEDS-HW]` Verify udev hotplug + suspend/resume re-apply on real G502 HERO
+
+> **M4 Summary**
+> - **Done:** Implemented `squeakd` background daemon crate (`crates/squeakd`): single-owner `DeviceRegistry` over `DeviceBackend` trait, pure `rustix` `NETLINK_KOBJECT_UEVENT` hidraw hotplug watcher, `systemd-logind` `PrepareForSleep` wake watcher, versioned `dev.squeak.Daemon` D-Bus interface with signals (`DevicesChanged`, `DeviceSettingsApplied`, `DeviceError`), systemd user unit (`data/systemd/squeakd.service`), D-Bus session activation service (`data/dbus/dev.squeak.Daemon.service`), and complete `docs/dbus.md` protocol reference.
+> - **Tested:** Quality gate green (`fmt`, `clippy -D warnings`, doc checks, unused-crate-dependencies), 87 unit and integration tests passing across all crates.
+> - **Needs hardware:** Physical verification of hotplug unbind/bind and `login1` wake signal on real hardware.
+> - **Risks:** When `squeakd` is running and owning `/dev/hidraw*`, CLI direct access will compete unless routed through D-Bus proxy.
+> - **Next:** M5 (`COLOR_LED_EFFECTS` `0x8070`, `ONBOARD_PROFILES` `0x8100` host mode, `MOUSE_BUTTON_SPY` `0x8110`, button remap).
 
 ## M5 – Buttons, Scroll, Lighting
 - [ ] `REPROG_CONTROLS_V4` (`0x1B04`) control enumeration + remap (button/key/macro/DPI-cycle/profile-switch/disable)

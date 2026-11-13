@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 clap.workspace = true
+futures-lite.workspace = true
 hidpp.workspace = true
 rustix.workspace = true
 serde.workspace = true

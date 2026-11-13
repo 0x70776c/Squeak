@@ -11,3 +11,6 @@ Cargo.lock.bak
 /build-dir/
 /repo/
 *.flatpak
+
+# Local reverse-engineering working directories and traces
+/reversedghub/

@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=dev.squeak.Daemon
+Exec=/usr/bin/squeakd
+SystemdService=squeakd.service
